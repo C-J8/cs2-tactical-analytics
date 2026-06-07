@@ -112,7 +112,7 @@ def test_progression_signature_uses_dominant_regions() -> None:
         ]
     )
 
-    assert build_progression_signature(timeline, "A") == "MID_CONTROL>A_PRESSURE>PLANT_A"
+    assert build_progression_signature(timeline, "A") == "A_PRESSURE>PLANT_A"
 
 
 def test_death_context_marks_order_and_target_death() -> None:

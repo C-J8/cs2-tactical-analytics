@@ -7,6 +7,8 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 
+from src.config.schemas import FeatureWindowsConfig
+from src.features.feature_windows import FeatureWindow, configured_feature_windows, max_window_end
 from src.features.region_mapping import add_region_columns
 from src.utils.text import safe_slug
 
@@ -106,10 +108,14 @@ def build_utility_events(
     silver_dir: Path,
     round_base: pd.DataFrame,
     *,
-    window_end: int,
+    windows: list[FeatureWindow] | None = None,
+    window_end: int | None = None,
     region_lookup: dict,
     tickrate: float = 64.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
+    windows = windows or configured_feature_windows(FeatureWindowsConfig())
+    if window_end is not None:
+        windows = [FeatureWindow(0, window_end, "cumulative")]
     events = []
     diagnostics = {"grenades_granularity": detect_grenades_granularity(silver_dir / "grenades.parquet")}
     for table_name, utility_type in [("smokes", "smoke"), ("infernos", "molotov")]:
@@ -117,10 +123,10 @@ def build_utility_events(
         if not path.exists() or round_base.empty:
             continue
         source = pd.read_parquet(path)
-        table_events = events_from_table(source, round_base, utility_type=utility_type, source_table=table_name, region_lookup=region_lookup, tickrate=tickrate, window_end=window_end)
+        table_events = events_from_table(source, round_base, utility_type=utility_type, source_table=table_name, region_lookup=region_lookup, tickrate=tickrate, windows=windows)
         events.append(table_events)
     utility_events = pd.concat(events, ignore_index=True) if events else empty_utility_events()
-    aggregates = build_utility_event_aggregates(utility_events, round_base)
+    aggregates = build_utility_event_aggregates(utility_events, round_base, windows)
     return utility_events, aggregates, diagnostics
 
 
@@ -132,12 +138,32 @@ def events_from_table(
     source_table: str,
     region_lookup: dict,
     tickrate: float,
-    window_end: int,
+    windows: list[FeatureWindow] | None = None,
+    window_end: int | None = None,
 ) -> pd.DataFrame:
     if source.empty:
         return empty_utility_events()
+    windows = windows or configured_feature_windows(FeatureWindowsConfig())
+    if window_end is not None:
+        windows = [FeatureWindow(0, window_end, "cumulative")]
     merged = source.merge(
-        round_base[["round_feature_id", "round_id", "parse_id", "series_id", "target_team", "round_num", "freeze_end_tick", "round_start_tick"]],
+        round_base[
+            [
+                column
+                for column in [
+                    "round_feature_id",
+                    "round_id",
+                    "parse_id",
+                    "series_id",
+                    "target_team",
+                    "round_num",
+                    "freeze_end_tick",
+                    "round_start_tick",
+                    "round_end_tick",
+                ]
+                if column in round_base.columns
+            ]
+        ],
         left_on=["source_parse_id", "round_num"],
         right_on=["parse_id", "round_num"],
         how="inner",
@@ -147,8 +173,15 @@ def events_from_table(
         return empty_utility_events()
     merged["event_tick"] = merged.get("start_tick")
     merged["anchor_tick"] = merged["freeze_end_tick"].fillna(merged["round_start_tick"])
+    if "round_end_tick" not in merged.columns:
+        merged["round_end_tick"] = merged["anchor_tick"] + (max_window_end(windows) * tickrate)
     merged["seconds_from_freeze_end"] = (merged["event_tick"] - merged["anchor_tick"]) / tickrate
-    merged = merged[(merged["seconds_from_freeze_end"] >= 0) & (merged["seconds_from_freeze_end"] <= window_end) & (merged.get("thrower_side") == "t")].copy()
+    merged = merged[
+        (merged["seconds_from_freeze_end"] >= 0)
+        & (merged["seconds_from_freeze_end"] <= max_window_end(windows))
+        & (merged["event_tick"] <= merged["round_end_tick"])
+        & (merged.get("thrower_side") == "t")
+    ].copy()
     if merged.empty:
         return empty_utility_events()
     merged = add_region_columns(merged, place_column="thrower_place" if "thrower_place" in merged.columns else None, lookup=region_lookup, prefix="throw_")
@@ -213,39 +246,44 @@ def detect_grenades_granularity(path: Path) -> str:
     return "trajectory_level" if ticks_per_entity.mean() > 1 else "event_level"
 
 
-def build_utility_event_aggregates(utility_events: pd.DataFrame, round_base: pd.DataFrame) -> pd.DataFrame:
+def build_utility_event_aggregates(utility_events: pd.DataFrame, round_base: pd.DataFrame, windows: list[FeatureWindow]) -> pd.DataFrame:
     result = round_base[["round_feature_id"]].copy()
-    defaults = {
-        "smokes_used_0_20": 0,
-        "molotovs_used_0_20": 0,
-        "flashes_used_0_20": None,
-        "he_used_0_20": None,
-        "total_utility_used_0_20": 0,
-        "smokes_to_mid_control_0_20": 0,
-        "smokes_to_a_pressure_0_20": 0,
-        "smokes_to_b_pressure_0_20": 0,
-        "molotovs_to_mid_control_0_20": 0,
-        "molotovs_to_a_pressure_0_20": 0,
-        "molotovs_to_b_pressure_0_20": 0,
-        "first_smoke_time": None,
-        "first_molotov_time": None,
-        "first_utility_time": None,
-    }
+    defaults = utility_aggregate_defaults(windows)
+    defaults.update(
+        {
+            "smokes_used_0_20": 0,
+            "molotovs_used_0_20": 0,
+            "flashes_used_0_20": None,
+            "he_used_0_20": None,
+            "total_utility_used_0_20": 0,
+            "smokes_to_mid_control_0_20": 0,
+            "smokes_to_a_pressure_0_20": 0,
+            "smokes_to_b_pressure_0_20": 0,
+            "molotovs_to_mid_control_0_20": 0,
+            "molotovs_to_a_pressure_0_20": 0,
+            "molotovs_to_b_pressure_0_20": 0,
+        }
+    )
+    defaults.update(
+        {
+            "first_smoke_time": None,
+            "first_molotov_time": None,
+            "first_utility_time": None,
+        }
+    )
     if utility_events.empty:
-        for column, value in defaults.items():
-            result[column] = value
-        return result
+        defaults_frame = pd.DataFrame([defaults] * len(result), index=result.index)
+        return pd.concat([result, defaults_frame], axis=1)
     grouped = []
     for round_feature_id, events in utility_events.groupby("round_feature_id"):
         row = {"round_feature_id": round_feature_id, **defaults}
+        for feature_window in windows:
+            window_events = events[(events["seconds_from_freeze_end"] >= feature_window.start) & (events["seconds_from_freeze_end"] < feature_window.end)]
+            add_utility_counts(row, window_events, feature_window.suffix)
+        legacy_events = events[(events["seconds_from_freeze_end"] >= 0) & (events["seconds_from_freeze_end"] < 20)]
+        add_utility_counts(row, legacy_events, "0_20")
         smokes = events[events["utility_type"] == "smoke"]
         molotovs = events[events["utility_type"] == "molotov"]
-        row["smokes_used_0_20"] = len(smokes)
-        row["molotovs_used_0_20"] = len(molotovs)
-        row["total_utility_used_0_20"] = len(events)
-        for group, suffix in [("MID_CONTROL", "mid_control"), ("A_PRESSURE", "a_pressure"), ("B_PRESSURE", "b_pressure")]:
-            row[f"smokes_to_{suffix}_0_20"] = int((smokes["end_region_group"] == group).sum())
-            row[f"molotovs_to_{suffix}_0_20"] = int((molotovs["end_region_group"] == group).sum())
         row["first_smoke_time"] = smokes["seconds_from_freeze_end"].min() if not smokes.empty else None
         row["first_molotov_time"] = molotovs["seconds_from_freeze_end"].min() if not molotovs.empty else None
         row["first_utility_time"] = events["seconds_from_freeze_end"].min()
@@ -257,6 +295,32 @@ def build_utility_event_aggregates(utility_events: pd.DataFrame, round_base: pd.
         elif value is not None:
             merged[column] = merged[column].fillna(value)
     return merged
+
+
+def utility_aggregate_defaults(windows: list[FeatureWindow]) -> dict[str, object]:
+    defaults: dict[str, object] = {}
+    for feature_window in windows:
+        suffix = feature_window.suffix
+        defaults[f"smokes_used_{suffix}"] = 0
+        defaults[f"molotovs_used_{suffix}"] = 0
+        defaults[f"flashes_used_{suffix}"] = None
+        defaults[f"he_used_{suffix}"] = None
+        defaults[f"total_utility_used_{suffix}"] = 0
+        for region_suffix in ["mid_control", "a_pressure", "b_pressure"]:
+            defaults[f"smokes_to_{region_suffix}_{suffix}"] = 0
+            defaults[f"molotovs_to_{region_suffix}_{suffix}"] = 0
+    return defaults
+
+
+def add_utility_counts(row: dict[str, object], events: pd.DataFrame, suffix: str) -> None:
+    smokes = events[events["utility_type"] == "smoke"]
+    molotovs = events[events["utility_type"] == "molotov"]
+    row[f"smokes_used_{suffix}"] = len(smokes)
+    row[f"molotovs_used_{suffix}"] = len(molotovs)
+    row[f"total_utility_used_{suffix}"] = len(events)
+    for group, region_suffix in [("MID_CONTROL", "mid_control"), ("A_PRESSURE", "a_pressure"), ("B_PRESSURE", "b_pressure")]:
+        row[f"smokes_to_{region_suffix}_{suffix}"] = int((smokes["end_region_group"] == group).sum())
+        row[f"molotovs_to_{region_suffix}_{suffix}"] = int((molotovs["end_region_group"] == group).sum())
 
 
 def empty_player_utility() -> pd.DataFrame:

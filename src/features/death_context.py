@@ -21,6 +21,10 @@ def build_death_context(kills: pd.DataFrame, round_features: pd.DataFrame, *, re
     context["anchor_tick"] = context["freeze_end_tick"].fillna(context["round_start_tick"])
     context["death_tick"] = context["tick"]
     context["seconds_from_freeze_end"] = (context["death_tick"] - context["anchor_tick"]) / tickrate
+    if "round_end_tick" in round_features.columns:
+        end_ticks = round_features[["round_feature_id", "round_end_tick"]].drop_duplicates()
+        context = context.merge(end_ticks, on="round_feature_id", how="left")
+        context = context[(context["round_end_tick"].isna()) | (context["death_tick"] <= context["round_end_tick"])].copy()
     context = add_region_columns(context, place_column="victim_place" if "victim_place" in context.columns else None, lookup=region_lookup, prefix="death_")
     context["death_order"] = context.groupby("round_feature_id")["death_tick"].rank(method="first").astype(int)
     context["is_first_death"] = context["death_order"] == 1

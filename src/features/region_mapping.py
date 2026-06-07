@@ -48,9 +48,11 @@ def add_region_columns(df: pd.DataFrame, *, place_column: str | None, lookup: di
         mapped[f"{prefix}region_name"] = UNKNOWN_REGION
         mapped[f"{prefix}region_group"] = UNKNOWN_GROUP
         return mapped
-    regions = mapped[place_column].map(lambda value: map_place_to_region(value, lookup))
-    mapped[f"{prefix}region_name"] = regions.map(lambda value: value[0])
-    mapped[f"{prefix}region_group"] = regions.map(lambda value: value[1])
+    region_names = {place: region[0] for place, region in lookup.items()}
+    region_groups = {place: region[1] for place, region in lookup.items()}
+    normalized_places = mapped[place_column].map(lambda value: None if value is None or pd.isna(value) else normalize_place(str(value)))
+    mapped[f"{prefix}region_name"] = normalized_places.map(region_names).fillna(UNKNOWN_REGION)
+    mapped[f"{prefix}region_group"] = normalized_places.map(region_groups).fillna(UNKNOWN_GROUP)
     return mapped
 
 

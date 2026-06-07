@@ -443,7 +443,6 @@ Useful options:
 ```bash
 python -m src.features.build_round_features --config configs/project.yaml --limit-demos 3 --force
 python -m src.features.build_round_features --config configs/project.yaml --dry-run
-python -m src.features.build_round_features --config configs/project.yaml --window-end 20
 ```
 
 Outputs:
@@ -461,19 +460,56 @@ The MVP includes:
 
 - round context and trace columns;
 - A/B target-site label when a plant site is observed;
-- early-round position features for the first 20 seconds after freeze end;
+- interval and cumulative temporal windows from freeze end through the full 115-second regulation round;
 - Mirage place-name mapping into tactical region groups;
 - initial utility loadout from `ticks.inventory`;
 - smoke/molotov utility events from `smokes.parquet` and `infernos.parquet`;
-- utility usage aggregates for the first 20 seconds;
+- position, region-presence, bomb-carrier, and utility aggregates across early, mid, and late round windows;
 - feature audit with warnings, null-column counts, and utility/region status.
+
+Temporal windows are configured in `configs/project.yaml`:
+
+```yaml
+feature_windows:
+  round_duration_seconds: 115
+  interval_windows:
+    - [0, 15]
+    - [15, 25]
+    - [25, 35]
+    - [35, 45]
+    - [45, 55]
+    - [55, 65]
+    - [65, 75]
+    - [75, 85]
+    - [85, 95]
+    - [95, 105]
+    - [105, 115]
+  cumulative_windows:
+    - [0, 15]
+    - [0, 25]
+    - [0, 35]
+    - [0, 45]
+    - [0, 55]
+    - [0, 65]
+    - [0, 75]
+    - [0, 85]
+    - [0, 95]
+    - [0, 105]
+    - [0, 115]
+```
+
+The first window is `0-15s` because Mirage often has instant utility, opening duels, ramp/palace pressure, underpass/mid contact, and fast B pressure before the old 20-second cutoff was useful. The remaining windows cover the whole round so late executes, fakes, saves, and desperate final moves are not discarded.
+
+Long tables such as `region_presence_by_round`, `round_region_timeline`, and `bomb_carrier_timeline` include `window_type` to separate `interval` windows from `cumulative` windows. Wide features use column suffixes such as `players_mid_control_0_15`, `time_a_pressure_0_55`, `smokes_used_95_105`, `molotovs_used_0_115`, and `bomb_carrier_region_105_115`.
+
+Position ticks are downsampled to one player observation per second before window aggregation so the full-round feature build remains tractable. Discrete events such as utility throws, kills, bomb drops, and plants still use their event ticks and are filtered by the real `round_end_tick`.
 
 Important limitations:
 
 - `grenades.parquet` is detected as trajectory/tick-level and is not treated as a simple grenade-event table in this MVP.
 - Target-site inference for rounds without plant is not implemented; those rounds keep a null model label.
 - Silver ticks do not yet contain reliable player-to-team identity. Early position and utility features use T-side players as the attacking-side proxy and record this in `feature_audit`.
-- Tickrate is assumed to be 64 ticks per second for early-window features.
+- Tickrate is assumed to be 64 ticks per second for temporal-window features.
 - ML, model training, BigQuery, and dashboards are still out of scope.
 
 Validation notebook:

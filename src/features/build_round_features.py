@@ -7,6 +7,7 @@ import pandas as pd
 
 from src.config.schemas import load_project_config
 from src.features.feature_audit import build_feature_audit
+from src.features.feature_windows import configured_feature_windows
 from src.features.position_features import build_position_outputs, load_early_ticks
 from src.features.region_mapping import build_place_lookup, choose_place_column, load_region_config
 from src.features.round_context import build_round_base
@@ -83,7 +84,7 @@ def run_feature_pipeline(
     limit_demos: int | None = None,
     force: bool = False,
     dry_run: bool = False,
-    window_end: int = 20,
+    window_end: int | None = None,
     target_map: str | None = None,
     target_team: str | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Path], dict[str, int]]:
@@ -92,6 +93,9 @@ def run_feature_pipeline(
     target_team = target_team or project.target_teams[0]
     silver_dir = project.parsed_silver_dir
     warnings: list[str] = []
+    feature_windows = configured_feature_windows(project.feature_windows)
+    if window_end is not None:
+        warnings.append("--window-end is deprecated; using feature_windows from configs/project.yaml.")
 
     feature_eligible = read_catalog(silver_dir / "feature_eligible_demos.parquet")
     feature_eligible = feature_eligible[
@@ -108,14 +112,16 @@ def run_feature_pipeline(
 
     region_config = load_region_config(Path("configs/maps/mirage_regions.yaml"))
     region_lookup = build_place_lookup(region_config)
-    early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), round_base, window_end=window_end)
+    early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), round_base, windows=feature_windows)
     place_column = choose_place_column(list(early_ticks.columns), region_config)
     if place_column is None:
         warnings.append("No place-name column found in ticks; region mapping fell back to UNKNOWN.")
 
-    region_presence, position_wide = build_position_outputs(early_ticks, round_base, region_lookup=region_lookup, place_column=place_column)
+    region_presence, position_wide = build_position_outputs(early_ticks, round_base, region_lookup=region_lookup, place_column=place_column, windows=feature_windows)
     player_utility, utility_start_wide = build_player_round_utility(early_ticks, round_base)
-    utility_events, utility_events_wide, diagnostics = build_utility_events(silver_dir, round_base, window_end=window_end, region_lookup=region_lookup)
+    utility_events, utility_events_wide, diagnostics = build_utility_events(silver_dir, round_base, windows=feature_windows, region_lookup=region_lookup)
+    diagnostics["feature_windows_interval"] = ",".join(f"{window.start}-{window.end}" for window in feature_windows if window.window_type == "interval")
+    diagnostics["feature_windows_cumulative"] = ",".join(f"{window.start}-{window.end}" for window in feature_windows if window.window_type == "cumulative")
     round_features = assemble_round_features(round_base, position_wide, utility_start_wide, utility_events_wide)
     feature_audit = build_feature_audit(
         feature_eligible=feature_eligible,
@@ -148,7 +154,9 @@ def assemble_round_features(round_base: pd.DataFrame, position_wide: pd.DataFram
     for column in FINAL_COLUMNS:
         if column not in result.columns:
             result[column] = None
-    return result[FINAL_COLUMNS]
+    ordered = [column for column in FINAL_COLUMNS if column in result.columns]
+    extras = [column for column in result.columns if column not in ordered]
+    return result[ordered + extras]
 
 
 def write_outputs(
@@ -204,7 +212,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit-demos", type=int, default=None)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--window-end", type=int, default=20)
+    parser.add_argument("--window-end", type=int, default=None, help="Deprecated; feature windows are read from configs/project.yaml.")
     parser.add_argument("--target-map", default=None)
     parser.add_argument("--target-team", default=None)
     return parser.parse_args()

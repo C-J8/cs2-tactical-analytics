@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.features.build_round_features import assemble_round_features, run_feature_pipeline
 from src.features.feature_audit import build_feature_audit
+from src.features.feature_windows import FeatureWindow
 from src.features.position_features import build_position_outputs
 from src.features.region_mapping import build_place_lookup, map_place_to_region
 from src.features.round_context import build_round_base
@@ -119,6 +120,8 @@ def test_position_features_centroid_and_region_presence() -> None:
 
     assert wide.loc[0, "team_center_x_10s"] == 5
     assert wide.loc[0, "players_mid_0_20"] == 2
+    assert wide.loc[0, "players_mid_control_0_15"] == 2
+    assert set(region_presence["window_type"]) == {"interval", "cumulative"}
     assert not region_presence.empty
 
 
@@ -159,6 +162,36 @@ def test_utility_events_from_smokes_and_infernos_fake() -> None:
     assert smoke_events.loc[0, "utility_type"] == "smoke"
     assert molotov_events.loc[0, "utility_type"] == "molotov"
     assert smoke_events.loc[0, "throw_region_group"] == "MID_CONTROL"
+
+
+def test_utility_events_after_round_end_are_excluded() -> None:
+    base = build_round_base(_rounds().head(1), _feature_eligible())
+    source = pd.DataFrame(
+        [
+            {"entity_id": 1, "start_tick": 1200, "thrower_X": 1, "thrower_Y": 2, "thrower_Z": 3, "thrower_place": "Middle", "thrower_name": "p1", "thrower_steamid": "1", "thrower_side": "t", "X": 10, "Y": 20, "Z": 30, "round_num": 1, "source_parse_id": "parse1"}
+        ]
+    )
+    lookup = build_place_lookup({"regions": [{"region_name": "Mid", "region_group": "MID_CONTROL", "aliases": ["Middle"]}]})
+
+    smoke_events = events_from_table(source, base, utility_type="smoke", source_table="smokes", region_lookup=lookup, tickrate=64, windows=[FeatureWindow(0, 115, "cumulative")])
+
+    assert smoke_events.empty
+
+
+def test_short_round_only_populates_available_windows() -> None:
+    base = build_round_base(_rounds().head(1), _feature_eligible())
+    ticks = pd.DataFrame(
+        [
+            {"round_feature_id": base.loc[0, "round_feature_id"], "round_id": base.loc[0, "round_id"], "series_id": "series1", "target_team": "Vitality", "map_name": "Mirage", "tick": 100, "seconds_from_freeze_end": 0, "X": 0, "Y": 0, "Z": 0, "steamid": "1", "health": 100, "region_name": "Mid", "region_group": "MID_CONTROL", "place": "Middle"},
+        ]
+    )
+    lookup = build_place_lookup({"regions": [{"region_name": "Mid", "region_group": "MID_CONTROL", "aliases": ["Middle"]}]})
+
+    region_presence, wide = build_position_outputs(ticks, base, region_lookup=lookup, place_column="place", windows=[FeatureWindow(0, 15, "interval"), FeatureWindow(105, 115, "interval")])
+
+    assert len(region_presence) == 1
+    assert wide.loc[0, "players_mid_control_0_15"] == 1
+    assert wide.loc[0, "players_mid_control_105_115"] == 0
 
 
 def test_detect_grenades_trajectory_level(tmp_path: Path) -> None:

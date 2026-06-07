@@ -8,6 +8,61 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class FeatureWindowsConfig(BaseModel):
+    round_duration_seconds: int = Field(default=115, ge=1)
+    interval_windows: list[tuple[int, int]] = Field(
+        default_factory=lambda: [
+            (0, 15),
+            (15, 25),
+            (25, 35),
+            (35, 45),
+            (45, 55),
+            (55, 65),
+            (65, 75),
+            (75, 85),
+            (85, 95),
+            (95, 105),
+            (105, 115),
+        ]
+    )
+    cumulative_windows: list[tuple[int, int]] = Field(
+        default_factory=lambda: [
+            (0, 15),
+            (0, 25),
+            (0, 35),
+            (0, 45),
+            (0, 55),
+            (0, 65),
+            (0, 75),
+            (0, 85),
+            (0, 95),
+            (0, 105),
+            (0, 115),
+        ]
+    )
+
+    @field_validator("interval_windows", "cumulative_windows", mode="before")
+    @classmethod
+    def coerce_windows(cls, values: list[list[int]] | list[tuple[int, int]]) -> list[tuple[int, int]]:
+        return [tuple(value) for value in values]
+
+    @model_validator(mode="after")
+    def windows_are_valid(self) -> "FeatureWindowsConfig":
+        for window_group in [self.interval_windows, self.cumulative_windows]:
+            for start, end in window_group:
+                if start < 0 or end <= start:
+                    raise ValueError("feature windows must have non-negative start and end greater than start")
+                if end > self.round_duration_seconds:
+                    raise ValueError("feature windows cannot exceed round_duration_seconds")
+        if (0, 15) not in self.interval_windows or (0, 15) not in self.cumulative_windows:
+            raise ValueError("feature windows must include 0-15s in both interval and cumulative windows")
+        if max(end for _, end in self.interval_windows) != self.round_duration_seconds:
+            raise ValueError("interval windows must reach round_duration_seconds")
+        if max(end for _, end in self.cumulative_windows) != self.round_duration_seconds:
+            raise ValueError("cumulative windows must reach round_duration_seconds")
+        return self
+
+
 class ProjectConfig(BaseModel):
     project_name: str
     mode: Literal["manual", "scrape"] = "manual"
@@ -39,6 +94,7 @@ class ProjectConfig(BaseModel):
     parse_manifest_dir: Path = Path("data/bronze/parse_manifest")
     parser_backend: Literal["awpy"] = "awpy"
     player_rosters_path: Path = Path("configs/player_rosters.yaml")
+    feature_windows: FeatureWindowsConfig = Field(default_factory=FeatureWindowsConfig)
     parse_player_props: list[str] = Field(
         default_factory=lambda: [
             "X",

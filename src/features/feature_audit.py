@@ -23,6 +23,9 @@ def build_feature_audit(
         "target_team player identity is not available in silver ticks; early-round features use T-side players as attacking-side proxy",
         "tickrate assumed at 64 ticks per second",
         f"grenades.parquet detected as {diagnostics.get('grenades_granularity', 'unknown')}",
+        f"interval windows: {diagnostics.get('feature_windows_interval', 'unknown')}",
+        f"cumulative windows: {diagnostics.get('feature_windows_cumulative', 'unknown')}",
+        "position ticks are downsampled to one player observation per second for full-round window features",
         *warnings,
     ]
     return pd.DataFrame(

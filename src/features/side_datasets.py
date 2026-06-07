@@ -8,6 +8,7 @@ import pandas as pd
 from src.config.schemas import load_project_config
 from src.features.bomb_context import build_bomb_carrier_timeline
 from src.features.death_context import build_death_context
+from src.features.feature_windows import configured_feature_windows
 from src.features.position_features import build_position_outputs, load_early_ticks
 from src.features.region_mapping import build_place_lookup, choose_place_column, load_region_config
 from src.features.round_progression import build_round_outcome_context, build_round_region_timeline
@@ -23,13 +24,14 @@ def run_side_dataset_pipeline(
     dry_run: bool = False,
     target_team: str | None = None,
     target_map: str | None = None,
-    window_end: int = 30,
+    window_end: int | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, Path], dict[str, int]]:
     project = load_project_config(config_path)
     target_team = target_team or project.target_teams[0]
     target_map = target_map or project.target_maps[0]
     silver_dir = project.parsed_silver_dir
     gold_dir = silver_dir.parent.parent / "gold"
+    feature_windows = configured_feature_windows(project.feature_windows)
 
     round_features = read_catalog(gold_dir / "round_features" / "round_features_mvp.parquet")
     round_base = read_catalog(gold_dir / "round_features" / "round_base.parquet")
@@ -47,18 +49,18 @@ def run_side_dataset_pipeline(
 
     region_config = load_region_config(Path("configs/maps/mirage_regions.yaml"))
     region_lookup = build_place_lookup(region_config)
-    early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), filtered, window_end=window_end)
+    early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), filtered, windows=feature_windows)
     place_column = choose_place_column(list(early_ticks.columns), region_config)
-    region_presence, _ = build_position_outputs(early_ticks, filtered, region_lookup=region_lookup, place_column=place_column)
+    region_presence, _ = build_position_outputs(early_ticks, filtered, region_lookup=region_lookup, place_column=place_column, windows=feature_windows)
 
     kills = pd.read_parquet(silver_dir / "kills.parquet") if (silver_dir / "kills.parquet").exists() else pd.DataFrame()
     bomb = pd.read_parquet(silver_dir / "bomb.parquet") if (silver_dir / "bomb.parquet").exists() else pd.DataFrame()
     utility_events_path = gold_dir / "utility_events" / "utility_events.parquet"
     utility_events = read_catalog(utility_events_path) if utility_events_path.exists() else pd.DataFrame()
     death_context = build_death_context(kills, filtered, region_lookup=region_lookup)
-    bomb_timeline = build_bomb_carrier_timeline(early_ticks, filtered, bomb, region_lookup=region_lookup, place_column=place_column)
-    region_timeline = build_round_region_timeline(region_presence, filtered, utility_events, death_context, bomb_timeline)
-    outcome_context = build_round_outcome_context(filtered, region_timeline, death_context, bomb_timeline)
+    bomb_timeline = build_bomb_carrier_timeline(early_ticks, filtered, bomb, region_lookup=region_lookup, place_column=place_column, windows=feature_windows)
+    region_timeline = build_round_region_timeline(region_presence, filtered, utility_events, death_context, bomb_timeline, windows=feature_windows)
+    outcome_context = build_round_outcome_context(filtered, region_timeline, death_context, bomb_timeline, windows=feature_windows)
     notes = {
         "ct_side": "Uses round_state_resolved when available; a zero CT-side count now indicates side resolution should be audited."
     }
@@ -211,7 +213,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--target-team", default=None)
     parser.add_argument("--target-map", default=None)
-    parser.add_argument("--window-end", type=int, default=30)
+    parser.add_argument("--window-end", type=int, default=None, help="Deprecated; feature windows are read from configs/project.yaml.")
     return parser.parse_args()
 
 

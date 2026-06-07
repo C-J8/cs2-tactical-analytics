@@ -32,6 +32,32 @@ parsed_silver_dir: data/silver/parsed_demos
 parse_manifest_dir: data/bronze/parse_manifest
 parser_backend: awpy
 player_rosters_path: configs/player_rosters.yaml
+feature_windows:
+  round_duration_seconds: 115
+  interval_windows:
+    - [0, 15]
+    - [15, 25]
+    - [25, 35]
+    - [35, 45]
+    - [45, 55]
+    - [55, 65]
+    - [65, 75]
+    - [75, 85]
+    - [85, 95]
+    - [95, 105]
+    - [105, 115]
+  cumulative_windows:
+    - [0, 15]
+    - [0, 25]
+    - [0, 35]
+    - [0, 45]
+    - [0, 55]
+    - [0, 65]
+    - [0, 75]
+    - [0, 85]
+    - [0, 95]
+    - [0, 105]
+    - [0, 115]
 parse_player_props:
   - X
   - Y
