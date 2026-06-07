@@ -1,0 +1,56 @@
+project_name: cs2-tactical-analytics
+mode: manual
+date_start: "2025-10-01"
+date_end: "2026-06-05"
+target_maps:
+  - Mirage
+target_teams:
+  - Vitality
+output_formats:
+  - csv
+  - parquet
+rate_limit_seconds: 5
+cache_enabled: true
+manual_seed_path: data/raw/manual/matches_seed.csv
+hltv_cache_dir: data/raw/hltv_pages
+bronze_output_dir: data/bronze/match_catalog_raw
+silver_output_dir: data/silver/matches_catalog
+demo_archive_dir: data/raw/demo_archives
+demo_output_dir: data/raw/demos
+demo_manifest_dir: data/bronze/demo_manifest
+download_timeout_seconds: 60
+download_rate_limit_seconds: 5
+max_downloads_per_run: null
+extract_archives: true
+force_download: false
+demo_manifest_path: data/bronze/demo_manifest/demo_manifest.parquet
+local_archive_manifest_dir: data/bronze/local_archive_manifest
+dem_files_manifest_dir: data/bronze/dem_files_manifest
+dem_files_manifest_path: data/bronze/dem_files_manifest/dem_files_manifest.parquet
+parsed_bronze_dir: data/bronze/parsed_demos
+parsed_silver_dir: data/silver/parsed_demos
+parse_manifest_dir: data/bronze/parse_manifest
+parser_backend: awpy
+parse_player_props:
+  - X
+  - Y
+  - Z
+  - health
+  - armor_value
+  - has_helmet
+  - has_defuser
+  - inventory
+parse_tables:
+  - rounds
+  - kills
+  - damages
+  - shots
+  - bomb
+  - smokes
+  - infernos
+  - grenades
+  - footsteps
+  - ticks
+parse_events: true
+max_demos_per_run: null
+force_parse: false

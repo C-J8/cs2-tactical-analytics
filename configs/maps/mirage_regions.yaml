@@ -1,0 +1,52 @@
+map_name: Mirage
+place_column_candidates:
+  - last_place_name
+  - place_name
+  - player_last_place_name
+  - place
+regions:
+  - region_name: T Spawn
+    region_group: T_SPAWN_AREA
+    aliases: [T Spawn, TSpawn]
+  - region_name: Mid
+    region_group: MID_CONTROL
+    aliases: [Mid, Middle]
+  - region_name: Top Mid
+    region_group: MID_CONTROL
+    aliases: [Top Mid, TopofMid]
+  - region_name: Connector
+    region_group: MID_CONTROL
+    aliases: [Connector]
+  - region_name: Window
+    region_group: MID_CONTROL
+    aliases: [Window, SnipersNest]
+  - region_name: Catwalk
+    region_group: MID_CONTROL
+    aliases: [Catwalk]
+  - region_name: A Ramp
+    region_group: A_PRESSURE
+    aliases: [A Ramp, TRamp, Ramp]
+  - region_name: Palace
+    region_group: A_PRESSURE
+    aliases: [Palace, PalaceInterior, PalaceAlley]
+  - region_name: A Site
+    region_group: BOMB_SITE_A
+    aliases: [A Site, BombsiteA, Stairs]
+  - region_name: B Apps
+    region_group: B_PRESSURE
+    aliases: [B Apps, Apartments, House, BackAlley]
+  - region_name: B Short
+    region_group: B_PRESSURE
+    aliases: [B Short, Ladder, Scaffolding]
+  - region_name: B Site
+    region_group: BOMB_SITE_B
+    aliases: [B Site, BombsiteB]
+  - region_name: Market
+    region_group: CT_SPACE
+    aliases: [Market, Shop]
+  - region_name: CT Spawn
+    region_group: CT_SPACE
+    aliases: [CT Spawn, CTSpawn, TicketBooth, Truck]
+  - region_name: Jungle
+    region_group: ROTATION_AREA
+    aliases: [Jungle, SideAlley, Underpass]
