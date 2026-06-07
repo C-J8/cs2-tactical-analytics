@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import polars as pl
+import yaml
 
 from src.config.schemas import load_project_config
 from src.utils.io import ensure_dir, read_catalog
@@ -53,6 +54,8 @@ DEFAULT_TARGET_PLAYERS = {
     "vitality": {"zywoo", "flamez", "mezii", "ropz", "apex"},
 }
 
+TeamRosters = dict[str, set[str]]
+
 
 def run_round_state_pipeline(
     config_path: Path,
@@ -68,6 +71,7 @@ def run_round_state_pipeline(
     rounds = pd.read_parquet(silver_dir / "rounds.parquet")
     bomb = pd.read_parquet(silver_dir / "bomb.parquet") if (silver_dir / "bomb.parquet").exists() else pd.DataFrame()
     ticks_path = silver_dir / "ticks.parquet"
+    team_rosters = load_player_rosters(project.player_rosters_path)
 
     state = build_round_state(
         round_features,
@@ -76,6 +80,7 @@ def run_round_state_pipeline(
         bomb,
         ticks_path=ticks_path,
         target_team=project.target_teams[0],
+        team_rosters=team_rosters,
     )
     audit = build_round_state_audit(state)
     outputs: dict[str, Path] = {}
@@ -99,6 +104,7 @@ def build_round_state(
     *,
     ticks_path: Path,
     target_team: str,
+    team_rosters: TeamRosters | None = None,
 ) -> pd.DataFrame:
     base = round_features.merge(
         round_base[[column for column in ["round_feature_id", "round_start_tick", "freeze_end_tick", "round_end_tick"] if column in round_base.columns]],
@@ -109,8 +115,9 @@ def build_round_state(
         [column for column in ["source_parse_id", "round_num", "winner", "reason", "bomb_plant", "bomb_site", "team_t", "team_ct", "t_team", "ct_team"] if column in rounds.columns]
     ].copy()
     base = base.merge(rounds_meta, left_on=["parse_id", "round_num"], right_on=["source_parse_id", "round_num"], how="left", suffixes=("", "_rounds"))
-    side_evidence = resolve_sides(base, ticks_path=ticks_path, target_team=target_team)
-    plant_evidence = resolve_plants(base, bomb, side_evidence, target_team=target_team)
+    team_rosters = team_rosters or default_team_rosters()
+    side_evidence = resolve_sides(base, ticks_path=ticks_path, target_team=target_team, team_rosters=team_rosters)
+    plant_evidence = resolve_plants(base, bomb, side_evidence, target_team=target_team, team_rosters=team_rosters)
 
     rows = []
     for _, row in base.iterrows():
@@ -172,12 +179,12 @@ def build_round_state(
     return pd.DataFrame(rows, columns=ROUND_STATE_COLUMNS)
 
 
-def resolve_sides(base: pd.DataFrame, *, ticks_path: Path, target_team: str) -> dict[tuple[str, int], dict[str, object]]:
+def resolve_sides(base: pd.DataFrame, *, ticks_path: Path, target_team: str, team_rosters: TeamRosters) -> dict[tuple[str, int], dict[str, object]]:
     explicit = resolve_sides_from_explicit_columns(base, target_team=target_team)
     unresolved = [key for key, value in explicit.items() if value["target_team_side"] == "unknown"]
     if not unresolved:
         return explicit
-    player_evidence = resolve_sides_from_ticks(base, ticks_path=ticks_path, target_team=target_team)
+    player_evidence = resolve_sides_from_ticks(base, ticks_path=ticks_path, target_team=target_team, team_rosters=team_rosters)
     for key in unresolved:
         if key in player_evidence and player_evidence[key]["target_team_side"] != "unknown":
             explicit[key] = player_evidence[key]
@@ -206,12 +213,13 @@ def resolve_sides_from_explicit_columns(base: pd.DataFrame, *, target_team: str)
     return evidence
 
 
-def resolve_sides_from_ticks(base: pd.DataFrame, *, ticks_path: Path, target_team: str) -> dict[tuple[str, int], dict[str, object]]:
+def resolve_sides_from_ticks(base: pd.DataFrame, *, ticks_path: Path, target_team: str, team_rosters: TeamRosters) -> dict[tuple[str, int], dict[str, object]]:
     if not ticks_path.exists():
         return {}
-    players = DEFAULT_TARGET_PLAYERS.get(target_team.lower(), set())
+    players = roster_players(team_rosters, target_team)
     if not players:
         return {}
+    player_team_index = build_player_team_index(team_rosters)
     parse_ids = base["parse_id"].dropna().astype(str).unique().tolist()
     sample = (
         pl.scan_parquet(ticks_path)
@@ -222,8 +230,22 @@ def resolve_sides_from_ticks(base: pd.DataFrame, *, ticks_path: Path, target_tea
         .collect()
         .to_pandas()
     )
-    sample["is_target_player"] = sample["name"].map(lambda value: normalize_player_name(value) in players)
+    sample["normalized_name"] = sample["name"].map(normalize_player_name)
+    sample["is_target_player"] = sample["normalized_name"].map(lambda value: value in players)
+    roster_rows = []
+    for row in sample.to_dict("records"):
+        for roster_team in player_team_index.get(row["normalized_name"], set()):
+            roster_rows.append({**row, "roster_team": roster_team})
+    roster_sample = pd.DataFrame(roster_rows)
     grouped = sample[sample["is_target_player"]].groupby(["source_parse_id", "round_num", "side"])["name"].nunique().reset_index(name="target_players")
+    roster_grouped = (
+        roster_sample
+        .groupby(["source_parse_id", "round_num", "side", "roster_team"])["normalized_name"]
+        .nunique()
+        .reset_index(name="roster_players")
+        if not roster_sample.empty
+        else pd.DataFrame(columns=["source_parse_id", "round_num", "side", "roster_team", "roster_players"])
+    )
     evidence = {}
     for _, row in base.iterrows():
         key = round_key(row)
@@ -238,17 +260,27 @@ def resolve_sides_from_ticks(base: pd.DataFrame, *, ticks_path: Path, target_tea
         else:
             target_side = "unknown"
         confidence = "high" if max(t_count, ct_count) >= 4 and target_side != "unknown" else ("low" if target_side != "unknown" else "unknown")
+        side_teams = best_roster_teams_for_round(roster_grouped, key)
+        team_t = side_teams.get("T") or (target_team if target_side == "T" else None)
+        team_ct = side_teams.get("CT") or (target_team if target_side == "CT" else None)
         evidence[key] = {
-            "team_t": target_team if target_side == "T" else None,
-            "team_ct": target_team if target_side == "CT" else None,
+            "team_t": team_t,
+            "team_ct": team_ct,
             "target_team_side": target_side,
-            "side_resolution_method": "ticks_player_roster",
+            "side_resolution_method": "ticks_player_roster_config",
             "side_resolution_confidence": confidence,
         }
     return evidence
 
 
-def resolve_plants(base: pd.DataFrame, bomb: pd.DataFrame, side_evidence: dict[tuple[str, int], dict[str, object]], *, target_team: str) -> dict[tuple[str, int], dict[str, object]]:
+def resolve_plants(
+    base: pd.DataFrame,
+    bomb: pd.DataFrame,
+    side_evidence: dict[tuple[str, int], dict[str, object]],
+    *,
+    target_team: str,
+    team_rosters: TeamRosters,
+) -> dict[tuple[str, int], dict[str, object]]:
     plants = {}
     bomb_plants = bomb[bomb["event"].astype(str).str.lower().eq("plant")].copy() if not bomb.empty and "event" in bomb.columns else pd.DataFrame()
     for _, row in base.iterrows():
@@ -258,12 +290,18 @@ def resolve_plants(base: pd.DataFrame, bomb: pd.DataFrame, side_evidence: dict[t
         bombsite = normalize_bombsite(first_present(plant.get("bombsite"), row.get("bomb_site"), row.get("target_site_observed")))
         bomb_planted = bool(bombsite and (not plant_rows.empty or pd.notna(row.get("bomb_plant"))))
         planting_player = clean_string(plant.get("name")) if bomb_planted else None
-        planting_side = side_for_player_in_round(planting_player, row, side_evidence.get(key, {}), target_team=target_team) if bomb_planted else None
-        planting_team = (
-            target_team
-            if planting_side == side_evidence.get(key, {}).get("target_team_side") and planting_side != "unknown"
-            else (row.get("opponent") if planting_side not in {None, "unknown"} else None)
-        )
+        planting_side = side_for_player_in_round(planting_player, row, side_evidence.get(key, {}), target_team=target_team, team_rosters=team_rosters) if bomb_planted else None
+        side = side_evidence.get(key, {})
+        preferred_team = side.get("team_t") if planting_side == "T" else side.get("team_ct") if planting_side == "CT" else None
+        roster_team = identify_player_team(planting_player, team_rosters, preferred_team=clean_string(preferred_team)) if bomb_planted else None
+        if roster_team:
+            planting_team = roster_team
+        elif planting_side == side_evidence.get(key, {}).get("target_team_side") and planting_side != "unknown":
+            planting_team = target_team
+        elif planting_side not in {None, "unknown"}:
+            planting_team = row.get("opponent")
+        else:
+            planting_team = None
         plants[key] = {
             "bomb_planted": bomb_planted,
             "bombsite": bombsite,
@@ -275,8 +313,8 @@ def resolve_plants(base: pd.DataFrame, bomb: pd.DataFrame, side_evidence: dict[t
     return plants
 
 
-def side_for_player_in_round(player_name: str | None, row: pd.Series, side: dict[str, object], *, target_team: str) -> str:
-    if player_name and normalize_player_name(player_name) in DEFAULT_TARGET_PLAYERS.get(target_team.lower(), set()):
+def side_for_player_in_round(player_name: str | None, row: pd.Series, side: dict[str, object], *, target_team: str, team_rosters: TeamRosters) -> str:
+    if player_name and normalize_player_name(player_name) in roster_players(team_rosters, target_team):
         return str(side.get("target_team_side") or "unknown")
     return opposite_side(str(side.get("target_team_side") or "unknown"))
 
@@ -297,6 +335,73 @@ def build_round_state_audit(state: pd.DataFrame) -> pd.DataFrame:
             }
         ]
     )
+
+
+def load_player_rosters(path: Path) -> TeamRosters:
+    if not path.exists():
+        return default_team_rosters()
+    with path.open("r", encoding="utf-8") as file:
+        content = yaml.safe_load(file) or {}
+    rosters: TeamRosters = {}
+    for team in content.get("teams", []):
+        team_name = clean_string(team.get("team_name"))
+        if not team_name:
+            continue
+        players: set[str] = set()
+        for player in team.get("players", []):
+            if isinstance(player, str):
+                players.add(normalize_player_name(player))
+                continue
+            player_name = player.get("player_name") or player.get("name")
+            players.add(normalize_player_name(player_name))
+            for alias in player.get("aliases", []):
+                players.add(normalize_player_name(alias))
+        rosters[team_name] = {player for player in players if player}
+    return rosters or default_team_rosters()
+
+
+def default_team_rosters() -> TeamRosters:
+    return {"Vitality": DEFAULT_TARGET_PLAYERS["vitality"]}
+
+
+def roster_players(team_rosters: TeamRosters, team_name: str) -> set[str]:
+    for roster_team, players in team_rosters.items():
+        if names_match(roster_team, team_name):
+            return players
+    return DEFAULT_TARGET_PLAYERS.get(team_name.lower(), set())
+
+
+def build_player_team_index(team_rosters: TeamRosters) -> dict[str, set[str]]:
+    player_team_index: dict[str, set[str]] = {}
+    for team_name, players in team_rosters.items():
+        for player_name in players:
+            player_team_index.setdefault(player_name, set()).add(team_name)
+    return player_team_index
+
+
+def identify_player_team(player_name: str | None, team_rosters: TeamRosters, *, preferred_team: str | None = None) -> str | None:
+    if not player_name:
+        return None
+    candidates = build_player_team_index(team_rosters).get(normalize_player_name(player_name), set())
+    if preferred_team:
+        for candidate in candidates:
+            if names_match(candidate, preferred_team):
+                return candidate
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    return None
+
+
+def best_roster_teams_for_round(roster_grouped: pd.DataFrame, key: tuple[str, int]) -> dict[str, str]:
+    if roster_grouped.empty:
+        return {}
+    matches = roster_grouped[(roster_grouped["source_parse_id"] == key[0]) & (roster_grouped["round_num"] == key[1])]
+    side_teams = {}
+    for side in ["T", "CT"]:
+        side_matches = matches[matches["side"].map(normalize_side) == side].sort_values("roster_players", ascending=False)
+        if not side_matches.empty and int(side_matches.iloc[0]["roster_players"]) >= 2:
+            side_teams[side] = str(side_matches.iloc[0]["roster_team"])
+    return side_teams
 
 
 def write_round_state_outputs(state: pd.DataFrame, audit: pd.DataFrame, output_dir: Path, *, force: bool) -> dict[str, Path]:

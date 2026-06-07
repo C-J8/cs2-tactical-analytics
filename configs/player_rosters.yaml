@@ -1,0 +1,117 @@
+teams:
+  - team_name: Vitality
+    aliases:
+      - Team Vitality
+    players:
+      - player_name: ZywOo
+        aliases:
+          - zywoo
+      - player_name: flameZ
+        aliases:
+          - flamez
+      - player_name: mezii
+      - player_name: ropz
+      - player_name: apEX
+        aliases:
+          - apex
+
+  - team_name: G2
+    aliases:
+      - G2 Esports
+    players:
+      - player_name: m0NESY
+      - player_name: NiKo
+      - player_name: huNter
+      - player_name: malbsMd
+      - player_name: Snax
+      - player_name: HeavyGod
+        aliases:
+          - HeavyGoD
+      - player_name: MATYS
+
+  - team_name: FURIA
+    players:
+      - player_name: FalleN
+      - player_name: KSCERATO
+      - player_name: yuurih
+      - player_name: YEKINDAR
+      - player_name: molodoy
+
+  - team_name: Spirit
+    players:
+      - player_name: donk
+      - player_name: chopper
+      - player_name: magixx
+      - player_name: sh1ro
+        aliases:
+          - SH1R0
+      - player_name: zont1x
+
+  - team_name: The MongolZ
+    aliases:
+      - MongolZ
+    players:
+      - player_name: 910
+      - player_name: bLitz
+      - player_name: Techno4K
+        aliases:
+          - Techno
+      - player_name: Senzu
+      - player_name: Mzinho
+        aliases:
+          - mzinho
+
+  - team_name: Falcons
+    players:
+      - player_name: NiKo
+      - player_name: m0NESY
+      - player_name: kyxsan
+      - player_name: kyousuke
+      - player_name: TeSeS
+
+  - team_name: NAVI
+    aliases:
+      - Natus Vincere
+    players:
+      - player_name: Aleksib
+      - player_name: b1t
+      - player_name: iM
+      - player_name: makazze
+      - player_name: w0nderful
+
+  - team_name: B8
+    players:
+      - player_name: npl
+      - player_name: alex666
+      - player_name: kensizor
+      - player_name: esenthial
+
+  - team_name: BC.Game
+    aliases:
+      - BC Game
+      - BCGame
+    players:
+      - player_name: s1mple
+      - player_name: electronic
+
+  - team_name: GamerLegion
+    players:
+      - player_name: REZ
+      - player_name: Tauson
+      - player_name: PR
+      - player_name: NertZ
+
+  - team_name: FUT
+    players:
+      - player_name: cobrazera
+      - player_name: controlez
+      - player_name: coolio
+      - player_name: dem0n
+      - player_name: hypex
+
+  - team_name: PARIVISION
+    players:
+      - player_name: Jame
+      - player_name: BELCHONOKK
+      - player_name: xiELO
+      - player_name: nota

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.features.round_state import build_round_state, build_round_state_audit, run_round_state_pipeline
+from src.features.round_state import build_round_state, build_round_state_audit, load_player_rosters, run_round_state_pipeline
 
 
 def _write_config(tmp_path: Path) -> Path:
@@ -158,6 +158,47 @@ def test_opponent_plant_does_not_become_target_label(tmp_path: Path) -> None:
     assert state.loc[0, "planting_team"] == "G2"
     assert state.loc[0, "label_source"] == "opponent_plant"
     assert state.loc[0, "label_confidence"] is None
+
+
+def test_opponent_plant_uses_roster_when_catalog_opponent_is_unknown(tmp_path: Path) -> None:
+    features = _round_features().assign(opponent="unknown")
+    state = build_round_state(
+        features,
+        _round_base(),
+        _rounds(team_t="G2", team_ct="Vitality"),
+        _bomb(name="m0NESY", bombsite="A"),
+        ticks_path=tmp_path / "missing_ticks.parquet",
+        target_team="Vitality",
+        team_rosters={"Vitality": {"zywoo", "apex"}, "G2": {"m0nesy"}},
+    )
+
+    assert state.loc[0, "planting_team"] == "G2"
+    assert state.loc[0, "label_source"] == "opponent_plant"
+    assert pd.isna(state.loc[0, "target_site_model_label"])
+
+
+def test_player_rosters_load_from_yaml(tmp_path: Path) -> None:
+    roster_path = tmp_path / "player_rosters.yaml"
+    roster_path.write_text(
+        """
+teams:
+  - team_name: Vitality
+    players:
+      - player_name: ZywOo
+        aliases:
+          - zywoo
+      - player_name: apEX
+  - team_name: G2
+    players:
+      - player_name: m0NESY
+""".strip(),
+        encoding="utf-8",
+    )
+
+    rosters = load_player_rosters(roster_path)
+
+    assert rosters["Vitality"] == {"zywoo", "apex"}
+    assert rosters["G2"] == {"m0nesy"}
 
 
 def test_round_without_plant_keeps_null_label(tmp_path: Path) -> None:

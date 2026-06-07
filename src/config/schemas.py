@@ -38,6 +38,7 @@ class ProjectConfig(BaseModel):
     parsed_silver_dir: Path = Path("data/silver/parsed_demos")
     parse_manifest_dir: Path = Path("data/bronze/parse_manifest")
     parser_backend: Literal["awpy"] = "awpy"
+    player_rosters_path: Path = Path("configs/player_rosters.yaml")
     parse_player_props: list[str] = Field(
         default_factory=lambda: [
             "X",

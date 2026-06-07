@@ -37,8 +37,11 @@ Edit these files to expand the catalog without changing code:
 - `configs/project.yaml`: mode, date window, target maps, target teams, output formats, cache/rate limit.
 - `configs/teams.yaml`: canonical team names, HLTV ids, aliases.
 - `configs/maps.yaml`: canonical map names and aliases.
+- `configs/player_rosters.yaml`: player nicknames by team for side and plant ownership resolution.
 
 Adding a new team only requires adding it to `configs/teams.yaml` and listing it in `target_teams`. Adding a new map only requires adding it to `configs/maps.yaml` and listing it in `target_maps`.
+
+When a demo does not expose reliable team columns, the pipeline can still infer side ownership from player names in ticks. Keep `configs/player_rosters.yaml` updated with the active/historical nicknames observed in the demos. This is especially useful when `opponent = unknown` in catalog metadata but the demo still contains recognizable player names.
 
 ## Manual Input
 
@@ -560,6 +563,14 @@ Outputs:
 - quality notes for unknown side or non-target plants.
 
 Side resolution uses explicit round team columns when available. When parsed rounds do not expose `team_t`/`team_ct`, the current MVP falls back to tick-level player/side evidence for the known Vitality roster.
+
+Player/team evidence comes from:
+
+```text
+configs/player_rosters.yaml
+```
+
+This file stores team rosters and aliases used to identify which side belongs to which team and who planted the bomb. A player name can appear in more than one roster because rosters change over time; in that case, the resolver uses the side context for that specific round and avoids guessing when the evidence is still ambiguous.
 
 After this stage, side datasets are rebuilt from `round_state_resolved`:
 
