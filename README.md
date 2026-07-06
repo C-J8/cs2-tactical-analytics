@@ -1,14 +1,53 @@
 # cs2-tactical-analytics
 
-Stage 1 builds the initial project structure and a reliable match/map catalog for a CS2 tactical analytics pipeline.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 5 -- T-side Tactical EDA**.
 
-Final direction:
+Project direction:
 
 ```text
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-This stage deliberately does not download demos, parse demos, train models, or build dashboards.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, and auditable T-side tactical EDA. ML, model training, dashboards, BigQuery, and Streamlit are not implemented yet.
+
+## Current Status
+
+Validated local snapshot for Vitality on Mirage:
+
+- 18 feature-eligible demos;
+- 405 parsed rounds in `round_features_mvp`;
+- 180 resolved T-side rounds;
+- 225 resolved CT-side rounds;
+- 98 high-confidence planted T-side rounds: 72 plant A and 26 plant B;
+- 82 T-side rounds without a valid Vitality plant;
+- interval and cumulative feature windows through 115 seconds;
+- 11 Stage 5 analytical tables generated in CSV and Parquet;
+- 101 tests passing and `ruff check .` passing.
+
+The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
+
+## Official Pipeline Order
+
+After local archives/demos are available, rebuild the current pipeline in this order:
+
+```bash
+python -m src.ingestion.build_match_catalog --config configs/project.yaml
+python -m src.ingestion.scan_local_archives --config configs/project.yaml --extract --force
+python -m src.parsing.probe_dem_metadata --config configs/project.yaml --force
+python -m src.parsing.parse_demos --config configs/project.yaml --force
+python -m src.parsing.parse_quality --config configs/project.yaml --force
+python -m src.features.build_round_features --config configs/project.yaml --force
+python -m src.features.round_state --config configs/project.yaml --force
+python -m src.features.side_datasets --config configs/project.yaml --force
+python -m src.analysis.t_side_eda --config configs/project.yaml --force
+```
+
+Important dependency rules:
+
+- rerunning `parse_demos --force` requires rebuilding parse quality and every downstream Gold stage;
+- rerunning `build_round_features --force` requires rebuilding `round_state`, `side_datasets`, and Stage 5;
+- `side_datasets` refuses to run without `round_state_resolved` so it cannot silently fall back to the old side proxy;
+- Stage 5 reads corrected Gold tables only and does not use `round_features_mvp` for final T-side decisions.
 
 ## MVP Scope
 
@@ -687,6 +726,22 @@ notebooks/06_t_side_tactical_eda.ipynb
 ```
 
 Stage 5 does not train a model, build a dashboard, export to BigQuery, or deepen CT-side analysis. It prepares the next step: a baseline A/B model using only `round_features_t_side_planted` and excluding every leakage field identified in `t_side_feature_catalog`.
+
+Validated Stage 5 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| T-side rounds | 180 |
+| Plant A | 72 |
+| Plant B | 26 |
+| No plant | 82 |
+| Unknown outcome | 0 |
+| Plant rate | 54.44% |
+| A share when planted | 73.47% |
+| B share when planted | 26.53% |
+| T-side win rate | 47.22% |
+
+These values describe the current local Gold snapshot and can change when new demos are added or upstream parsing is rebuilt.
 
 Validation commands:
 
