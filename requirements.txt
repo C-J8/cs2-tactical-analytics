@@ -8,3 +8,4 @@ beautifulsoup4>=4.12
 pytest>=8.0
 ruff>=0.5
 awpy>=2.0
+matplotlib>=3.8

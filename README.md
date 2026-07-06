@@ -622,6 +622,72 @@ Validation notebook:
 notebooks/05_round_state_resolution.ipynb
 ```
 
+## Stage 5 -- T-side Tactical EDA
+
+Stage 5 transforms the corrected Gold tables into an auditable offensive tactical analysis. The current MVP scope is strictly Vitality T-side on Mirage. CT-side tables remain preserved for a future defensive-analysis stage and are not expanded here.
+
+Run:
+
+```bash
+python -m src.analysis.t_side_eda --config configs/project.yaml --force
+```
+
+Dry-run:
+
+```bash
+python -m src.analysis.t_side_eda --config configs/project.yaml --dry-run
+```
+
+Official inputs:
+
+- `data/gold/round_features/round_features_t_side_all.parquet`
+- `data/gold/round_features/round_features_t_side_planted.parquet`
+- `data/gold/round_progression/round_region_timeline.parquet`
+- `data/gold/round_progression/death_context_by_round.parquet`
+- `data/gold/round_progression/bomb_carrier_timeline.parquet`
+- `data/gold/round_progression/round_outcome_context.parquet`
+- `data/gold/round_state/round_state_resolved.parquet`
+- `data/gold/utility_events/utility_events.parquet` for event-level smoke/molotov summaries
+
+Outputs are written under:
+
+```text
+data/gold/analysis/t_side_tactical_eda/
+```
+
+Generated in CSV and Parquet:
+
+- `t_side_eda_overview`
+- `t_side_site_distribution`
+- `t_side_opponent_summary`
+- `t_side_window_region_summary`
+- `t_side_window_utility_summary`
+- `t_side_no_plant_summary`
+- `t_side_death_summary`
+- `t_side_bomb_carrier_summary`
+- `t_side_progression_signature_summary`
+- `t_side_feature_catalog`
+- `t_side_eda_audit`
+
+The output tables cover:
+
+- overall A/B/no-plant distribution and T-side win rates;
+- opponent-level plant and win-rate summaries;
+- interval and cumulative region presence through 115 seconds;
+- utility by temporal window and tactical region;
+- no-plant failure context, first deaths, C4 location/drop context, and progression signatures;
+- an auditable feature catalog that marks labels, post-plant fields, final outcomes, and identifiers as unavailable for future modeling.
+
+The analytical `t_round_outcome` is conservative: `plant_A` and `plant_B` require high-confidence target-team labels; rounds without a valid target-team A/B plant become `no_plant`; inconsistent rows remain `unknown`. Opponent plants are never converted into Vitality labels.
+
+Validation notebook:
+
+```text
+notebooks/06_t_side_tactical_eda.ipynb
+```
+
+Stage 5 does not train a model, build a dashboard, export to BigQuery, or deepen CT-side analysis. It prepares the next step: a baseline A/B model using only `round_features_t_side_planted` and excluding every leakage field identified in `t_side_feature_catalog`.
+
 Validation commands:
 
 ```bash
