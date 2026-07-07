@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, and auditable T-side tactical EDA. ML, model training, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, and ranked findings for manual review. ML, model training, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -22,7 +22,9 @@ Validated local snapshot for Vitality on Mirage:
 - 82 T-side rounds without a valid Vitality plant;
 - interval and cumulative feature windows through 115 seconds;
 - 11 Stage 5 analytical tables generated in CSV and Parquet;
-- 101 tests passing and `ruff check .` passing.
+- 10 Stage 5.1 findings tables plus a generated Markdown report;
+- 75 ranked tactical candidates and 12 manual-review items;
+- 105 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -794,6 +796,21 @@ docs/t_side_tactical_findings.md
 ```
 
 The Markdown report is built from the current output tables, including small top-five summaries. Finding text uses conservative language and always keeps round counts/evidence strength available. `min_rounds` suppresses strong labels for sparse evidence, and interval/cumulative windows remain separate.
+
+Validated Stage 5.1 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Ranked key findings | 75 |
+| A/B region comparisons | 172 |
+| A/B utility comparisons | 135 |
+| Timing windows evaluated | 22 |
+| Manual-review items | 12 |
+| First strong interval signal | 15-25s, utility-led |
+| Highest interval signal | 75-85s, region-led |
+| Findings audit | ok |
+
+These outputs are exploratory candidates supported by the current sample, not causal conclusions. The manual-review queue keeps the underlying filters and evidence available for validation before any modeling step.
 
 Validation notebook:
 
