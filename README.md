@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 5 -- T-side Tactical EDA**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 5.1 -- T-side Tactical Findings**.
 
 Project direction:
 
@@ -40,6 +40,7 @@ python -m src.features.build_round_features --config configs/project.yaml --forc
 python -m src.features.round_state --config configs/project.yaml --force
 python -m src.features.side_datasets --config configs/project.yaml --force
 python -m src.analysis.t_side_eda --config configs/project.yaml --force
+python -m src.analysis.t_side_findings --config configs/project.yaml --force
 ```
 
 Important dependency rules:
@@ -48,6 +49,7 @@ Important dependency rules:
 - rerunning `build_round_features --force` requires rebuilding `round_state`, `side_datasets`, and Stage 5;
 - `side_datasets` refuses to run without `round_state_resolved` so it cannot silently fall back to the old side proxy;
 - Stage 5 reads corrected Gold tables only and does not use `round_features_mvp` for final T-side decisions.
+- Stage 5.1 reads Stage 5 aggregates first and ranks conservative findings for manual review.
 
 ## MVP Scope
 
@@ -742,6 +744,64 @@ Validated Stage 5 snapshot:
 | T-side win rate | 47.22% |
 
 These values describe the current local Gold snapshot and can change when new demos are added or upstream parsing is rebuilt.
+
+## Stage 5.1 -- T-side Tactical Findings
+
+Stage 5 produces organized T-side EDA tables. Stage 5.1 reads those aggregates and turns them into ranked, auditable tactical candidates for manual inspection. It compares plant A vs plant B regions and utility, identifies candidate timing breakpoints, ranks no-plant/C4 patterns, summarizes opponent tendencies and progression signatures, and creates a review queue.
+
+Run:
+
+```bash
+python -m src.analysis.t_side_findings --config configs/project.yaml --force
+```
+
+Useful options:
+
+```bash
+python -m src.analysis.t_side_findings --config configs/project.yaml --dry-run
+python -m src.analysis.t_side_findings --config configs/project.yaml --min-rounds 3 --top-n 15 --force
+```
+
+Primary inputs are the eleven Parquet outputs from:
+
+```text
+data/gold/analysis/t_side_tactical_eda/
+```
+
+Outputs are written under:
+
+```text
+data/gold/analysis/t_side_tactical_findings/
+```
+
+Generated in CSV and Parquet:
+
+- `t_side_key_findings`
+- `t_side_ab_region_differences`
+- `t_side_ab_utility_differences`
+- `t_side_ab_timing_breakpoints`
+- `t_side_no_plant_failure_findings`
+- `t_side_bomb_carrier_findings`
+- `t_side_opponent_tendencies`
+- `t_side_progression_findings`
+- `t_side_manual_review_queue`
+- `t_side_findings_audit`
+
+The command also generates:
+
+```text
+docs/t_side_tactical_findings.md
+```
+
+The Markdown report is built from the current output tables, including small top-five summaries. Finding text uses conservative language and always keeps round counts/evidence strength available. `min_rounds` suppresses strong labels for sparse evidence, and interval/cumulative windows remain separate.
+
+Validation notebook:
+
+```text
+notebooks/07_t_side_tactical_findings.ipynb
+```
+
+Stage 5.1 does not train a model, make causal claims, build a dashboard, export to BigQuery, or deepen CT-side analysis. The next planned step is a leakage-controlled baseline A/B model using only high-confidence rows from `round_features_t_side_planted`, after manually reviewing the queue generated here.
 
 Validation commands:
 
