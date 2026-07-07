@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 5.1 -- T-side Tactical Findings**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 5.2 -- T-side Manual Review Pack**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, and ranked findings for manual review. ML, model training, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, and a concrete round-level manual-review pack. ML, model training, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -24,7 +24,8 @@ Validated local snapshot for Vitality on Mirage:
 - 11 Stage 5 analytical tables generated in CSV and Parquet;
 - 10 Stage 5.1 findings tables plus a generated Markdown report;
 - 75 ranked tactical candidates and 12 manual-review items;
-- 105 tests passing and `ruff check .` passing.
+- 20 Stage 5.2 findings covered by 151 selected finding-round pairs;
+- 110 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -43,6 +44,7 @@ python -m src.features.round_state --config configs/project.yaml --force
 python -m src.features.side_datasets --config configs/project.yaml --force
 python -m src.analysis.t_side_eda --config configs/project.yaml --force
 python -m src.analysis.t_side_findings --config configs/project.yaml --force
+python -m src.analysis.t_side_manual_review --config configs/project.yaml --force
 ```
 
 Important dependency rules:
@@ -52,6 +54,7 @@ Important dependency rules:
 - `side_datasets` refuses to run without `round_state_resolved` so it cannot silently fall back to the old side proxy;
 - Stage 5 reads corrected Gold tables only and does not use `round_features_mvp` for final T-side decisions.
 - Stage 5.1 reads Stage 5 aggregates first and ranks conservative findings for manual review.
+- Stage 5.2 links Stage 5.1 findings to concrete T-side rounds and must be rebuilt whenever Stage 5.1 changes.
 
 ## MVP Scope
 
@@ -818,7 +821,53 @@ Validation notebook:
 notebooks/07_t_side_tactical_findings.ipynb
 ```
 
-Stage 5.1 does not train a model, make causal claims, build a dashboard, export to BigQuery, or deepen CT-side analysis. The next planned step is a leakage-controlled baseline A/B model using only high-confidence rows from `round_features_t_side_planted`, after manually reviewing the queue generated here.
+Stage 5.1 does not train a model, make causal claims, build a dashboard, export to BigQuery, or deepen CT-side analysis.
+
+## Stage 5.2 -- T-side Manual Review Pack
+
+Stage 5.1 ranks descriptive tactical findings. Stage 5.2 turns those findings into concrete T-side rounds for qualitative review, preserving the source filter, temporal window, region, evidence metric, and review question. Plant A/B examples require high-confidence labels; no-plant examples remain separate and never receive an inferred site label.
+
+Run:
+
+```bash
+python -m src.analysis.t_side_manual_review --config configs/project.yaml --force
+```
+
+Useful options:
+
+```bash
+python -m src.analysis.t_side_manual_review --config configs/project.yaml --dry-run
+python -m src.analysis.t_side_manual_review --config configs/project.yaml --top-n-findings 20 --max-rounds-per-finding 8 --force
+python -m src.analysis.t_side_manual_review --config configs/project.yaml --include-weak --force
+```
+
+The command writes seven CSV/Parquet tables under:
+
+```text
+data/gold/analysis/t_side_manual_review/
+```
+
+The outputs contain the selected rounds, finding-to-round map, row-level evidence, queue summary, editable manual-decision template, model-readiness checks, and audit. It also generates:
+
+```text
+docs/t_side_manual_review_pack.md
+notebooks/08_t_side_manual_review_pack.ipynb
+```
+
+Validated Stage 5.2 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Findings selected | 20 |
+| Findings with round examples | 20 |
+| Selected finding-round pairs | 151 |
+| Evidence rows | 151 |
+| Output tables | 7 |
+| Audit | ok |
+
+The same round may support multiple findings, so 151 represents finding-round review pairs rather than 151 unique matches. The generated decision template starts as `pending` and is intended to record whether each inspected round supports, partially supports, contradicts, or cannot resolve its finding.
+
+Stage 5.2 does not train a model. The next step is a leakage-controlled A/B baseline only after the manual decisions are completed and a pre-plant prediction horizon is chosen.
 
 Validation commands:
 
