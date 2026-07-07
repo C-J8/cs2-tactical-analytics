@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 5.2 -- T-side Manual Review Pack**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 6 -- Leakage-Controlled T-side A/B Baseline Model**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, and a concrete round-level manual-review pack. ML, model training, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, and a leakage-controlled A/B baseline. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -25,7 +25,8 @@ Validated local snapshot for Vitality on Mirage:
 - 10 Stage 5.1 findings tables plus a generated Markdown report;
 - 75 ranked tactical candidates and 12 manual-review items;
 - 20 Stage 5.2 findings covered by 151 selected finding-round pairs;
-- 110 tests passing and `ruff check .` passing.
+- 18 Stage 6 horizon/model evaluations with out-of-fold predictions;
+- 115 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -45,6 +46,7 @@ python -m src.features.side_datasets --config configs/project.yaml --force
 python -m src.analysis.t_side_eda --config configs/project.yaml --force
 python -m src.analysis.t_side_findings --config configs/project.yaml --force
 python -m src.analysis.t_side_manual_review --config configs/project.yaml --force
+python -m src.modeling.t_side_ab_baseline --config configs/project.yaml --force
 ```
 
 Important dependency rules:
@@ -55,6 +57,7 @@ Important dependency rules:
 - Stage 5 reads corrected Gold tables only and does not use `round_features_mvp` for final T-side decisions.
 - Stage 5.1 reads Stage 5 aggregates first and ranks conservative findings for manual review.
 - Stage 5.2 links Stage 5.1 findings to concrete T-side rounds and must be rebuilt whenever Stage 5.1 changes.
+- Stage 6 trains only on high-confidence planted T-side rounds and must be rebuilt whenever features, round state, or manual decisions change.
 
 ## MVP Scope
 
@@ -867,7 +870,72 @@ Validated Stage 5.2 snapshot:
 
 The same round may support multiple findings, so 151 represents finding-round review pairs rather than 151 unique matches. The generated decision template starts as `pending` and is intended to record whether each inspected round supports, partially supports, contradicts, or cannot resolve its finding.
 
-Stage 5.2 does not train a model. The next step is a leakage-controlled A/B baseline only after the manual decisions are completed and a pre-plant prediction horizon is chosen.
+Stage 5.2 does not train a model. Pending decisions do not block the preliminary baseline, but they are recorded as a limitation and must be completed before treating the model as more than exploratory.
+
+## Stage 6 -- Leakage-Controlled T-side A/B Baseline Model
+
+Stage 6 trains the first auditable baseline for predicting plant A versus plant B. Its only training source is `round_features_t_side_planted`, filtered to Vitality T-side Mirage rounds with labels A/B and `label_confidence=high`. No-plant rounds remain outside the model.
+
+Run:
+
+```bash
+python -m src.modeling.t_side_ab_baseline --config configs/project.yaml --force
+```
+
+Useful options:
+
+```bash
+python -m src.modeling.t_side_ab_baseline --config configs/project.yaml --dry-run
+python -m src.modeling.t_side_ab_baseline --config configs/project.yaml --horizons 15,25,35 --model-set baseline,logistic --force
+python -m src.modeling.t_side_ab_baseline --config configs/project.yaml --include-opponent --force
+```
+
+The default run evaluates majority baseline, balanced logistic regression, and balanced random forest at 15, 25, 35, 45, 55, and 65 seconds. Metrics and predictions are out-of-fold with stratified cross-validation. Imputation, scaling, and one-hot encoding are fitted inside each training fold.
+
+Leakage controls combine:
+
+- `t_side_feature_catalog.usable_for_future_model`;
+- explicit blocking of labels, outcomes, winner, plant, quality, audit, and identifier fields;
+- a strict allowlist for context without a temporal suffix;
+- inclusion only when a feature window ends at or before the horizon;
+- exclusion of rounds planted before the evaluated horizon when plant time is available.
+
+Primary inputs:
+
+```text
+data/gold/round_features/round_features_t_side_planted.parquet
+data/gold/analysis/t_side_tactical_eda/t_side_feature_catalog.parquet
+data/gold/analysis/t_side_manual_review/
+```
+
+Eight CSV/Parquet outputs are written under:
+
+```text
+data/gold/modeling/t_side_ab_baseline/
+```
+
+The outputs cover dataset audit, feature sets, metrics, confusion matrices, out-of-fold predictions, feature importance, horizon comparison, and readiness audit. The stage also generates:
+
+```text
+docs/t_side_ab_baseline_report.md
+notebooks/09_t_side_ab_baseline_model.ipynb
+```
+
+Validated Stage 6 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| High-confidence A/B rows | 98 |
+| Plant A / Plant B | 72 / 26 |
+| Horizons | 6 |
+| Models per horizon | 3 |
+| Metric rows | 18 |
+| Out-of-fold prediction rows | 1,494 |
+| Best 15s macro F1 | 0.667, random forest |
+| Best 65s macro F1 | 0.762, logistic regression |
+| Readiness checks | 10 passing |
+
+This is a baseline, not a final model. Later horizons contain more features but exclude rounds planted before the cutoff, so cohort sizes fall from 98 rounds at 15/25s to 65 rounds at 65s. Scores across horizons therefore are not direct causal comparisons. Manual review is still pending, class B has lower support, and no hyperparameter tuning or external validation has been performed.
 
 Validation commands:
 
