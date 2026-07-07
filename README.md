@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 6 -- Leakage-Controlled T-side A/B Baseline Model**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 6.1 -- T-side A/B Baseline Error Analysis and Interpretation**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, and a leakage-controlled A/B baseline. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, and baseline error interpretation. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -26,7 +26,8 @@ Validated local snapshot for Vitality on Mirage:
 - 75 ranked tactical candidates and 12 manual-review items;
 - 20 Stage 5.2 findings covered by 151 selected finding-round pairs;
 - 18 Stage 6 horizon/model evaluations with out-of-fold predictions;
-- 115 tests passing and `ruff check .` passing.
+- 120 Stage 6.1 selected-model errors analyzed across six horizons;
+- 120 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -47,6 +48,7 @@ python -m src.analysis.t_side_eda --config configs/project.yaml --force
 python -m src.analysis.t_side_findings --config configs/project.yaml --force
 python -m src.analysis.t_side_manual_review --config configs/project.yaml --force
 python -m src.modeling.t_side_ab_baseline --config configs/project.yaml --force
+python -m src.modeling.t_side_ab_error_analysis --config configs/project.yaml --force
 ```
 
 Important dependency rules:
@@ -58,6 +60,7 @@ Important dependency rules:
 - Stage 5.1 reads Stage 5 aggregates first and ranks conservative findings for manual review.
 - Stage 5.2 links Stage 5.1 findings to concrete T-side rounds and must be rebuilt whenever Stage 5.1 changes.
 - Stage 6 trains only on high-confidence planted T-side rounds and must be rebuilt whenever features, round state, or manual decisions change.
+- Stage 6.1 reads Stage 6 outputs only; it interprets errors and never trains a new model.
 
 ## MVP Scope
 
@@ -936,6 +939,64 @@ Validated Stage 6 snapshot:
 | Readiness checks | 10 passing |
 
 This is a baseline, not a final model. Later horizons contain more features but exclude rounds planted before the cutoff, so cohort sizes fall from 98 rounds at 15/25s to 65 rounds at 65s. Scores across horizons therefore are not direct causal comparisons. Manual review is still pending, class B has lower support, and no hyperparameter tuning or external validation has been performed.
+
+## Stage 6.1 -- T-side A/B Baseline Error Analysis and Interpretation
+
+Stage 6.1 analyzes the existing Stage 6 out-of-fold predictions without fitting or tuning any model. It selects the best non-majority model at each horizon by default, measures error confidence and direction, compares A/B behavior, checks opponent concentrations, summarizes feature-importance stability, and creates a practical demo-review queue.
+
+Run:
+
+```bash
+python -m src.modeling.t_side_ab_error_analysis --config configs/project.yaml --force
+```
+
+Useful focus options:
+
+```bash
+python -m src.modeling.t_side_ab_error_analysis --config configs/project.yaml --dry-run
+python -m src.modeling.t_side_ab_error_analysis --config configs/project.yaml --focus-model logistic_regression --focus-horizon 55 --force
+python -m src.modeling.t_side_ab_error_analysis --config configs/project.yaml --focus-model all --top-n 30 --force
+```
+
+The official inputs are the eight Stage 6 tables under:
+
+```text
+data/gold/modeling/t_side_ab_baseline/
+```
+
+Round features, outcome context, round state, Stage 5.2 review tables, and the feature catalog are optional enrichments. Round state resolves opponents when Stage 6 predictions still contain `unknown`; missing auxiliary inputs produce audit warnings rather than aborting the analysis.
+
+Thirteen CSV/Parquet outputs are written under:
+
+```text
+data/gold/modeling/t_side_ab_error_analysis/
+```
+
+They cover overview, errors by horizon/model, error rounds, high-confidence errors, opponent and class behavior, prediction types, feature stability, feature/error contrast, horizon recommendations, interpretation summary, manual-review queue, and audit. The stage also generates:
+
+```text
+docs/t_side_ab_error_analysis_report.md
+notebooks/10_t_side_ab_error_analysis.ipynb
+```
+
+Validated Stage 6.1 snapshot using `best_by_horizon`:
+
+| Metric | Value |
+| --- | ---: |
+| Selected OOF prediction rows | 498 |
+| Error rows | 120 |
+| B predicted as A | 83 |
+| A predicted as B | 37 |
+| High-confidence errors | 64 |
+| High-confidence B predicted as A | 45 |
+| Stable descriptive feature candidates | 15 |
+| Feature/error contrast rows | 424 |
+| Manual-review queue | 20 rounds |
+| Audit | ok |
+
+Every selected model beats the majority baseline in macro F1 at its own horizon, but the error analysis shows that early random-forest models still have weak B recall. The 15s horizon remains useful as the early baseline; 35/45s are candidates for a focused next experiment; 65s is not recommended as the primary horizon because it is later and uses a smaller filtered cohort.
+
+This stage does not establish causal feature effects or production readiness. Plant B remains the lower-support class, no-plant remains outside the model, larger horizons use different cohorts, and manual review is still pending.
 
 Validation commands:
 
