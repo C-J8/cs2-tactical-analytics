@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 6.2 -- Focused T-side A/B Feature Refinement Experiment**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 6.3 -- T-side A/B Candidate Baseline Promotion and Model Card**.
 
 Project direction:
 
@@ -28,7 +28,8 @@ Validated local snapshot for Vitality on Mirage:
 - 18 Stage 6 horizon/model evaluations with out-of-fold predictions;
 - 120 Stage 6.1 selected-model errors analyzed across six horizons;
 - 30 Stage 6.2 controlled horizon/feature-set/model experiments;
-- 125 tests passing and `ruff check .` passing.
+- 1 Stage 6.3 candidate baseline package promoted from Stage 6.2;
+- 133 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -51,6 +52,7 @@ python -m src.analysis.t_side_manual_review --config configs/project.yaml --forc
 python -m src.modeling.t_side_ab_baseline --config configs/project.yaml --force
 python -m src.modeling.t_side_ab_error_analysis --config configs/project.yaml --force
 python -m src.modeling.t_side_ab_refined_experiment --config configs/project.yaml --force
+python -m src.modeling.t_side_ab_candidate_promotion --config configs/project.yaml --force
 ```
 
 Important dependency rules:
@@ -64,6 +66,7 @@ Important dependency rules:
 - Stage 6 trains only on high-confidence planted T-side rounds and must be rebuilt whenever features, round state, or manual decisions change.
 - Stage 6.1 reads Stage 6 outputs only; it interprets errors and never trains a new model.
 - Stage 6.2 reuses Stage 6 leakage controls and compares fixed feature sets against the matching Stage 6 baseline.
+- Stage 6.3 reads Stage 6.2 outputs only; it promotes and documents a candidate without training new models.
 
 ## MVP Scope
 
@@ -1061,6 +1064,72 @@ Validated Stage 6.2 snapshot:
 The 45s `stable_only + logistic` experiment reached a higher raw macro F1 (`0.696`) and the same recall_B (`0.600`), but its recall_B gain over the matching baseline was smaller (`+0.050`). The ranked recommendation therefore keeps 35s first because the experiment's primary objective is improving B behavior, not maximizing one aggregate metric.
 
 Stage 6.2 is not a final model or a tuning sweep. The sample remains small and imbalanced, random round-level folds are not external validation, and manual review remains pending. The next decision is whether to promote one candidate as the next baseline or complete qualitative error review first.
+
+## Stage 6.3 -- T-side A/B Candidate Baseline Promotion and Model Card
+
+Stage 6.3 does not train a new model. It reads the Stage 6.2 experiment outputs, selects one candidate, freezes its configuration, writes auditable candidate tables, and generates presentation-ready documentation.
+
+Run:
+
+```bash
+python -m src.modeling.t_side_ab_candidate_promotion --config configs/project.yaml --force
+```
+
+Useful options:
+
+```bash
+python -m src.modeling.t_side_ab_candidate_promotion --config configs/project.yaml --dry-run
+python -m src.modeling.t_side_ab_candidate_promotion --config configs/project.yaml --selection-mode top_recommendation --force
+python -m src.modeling.t_side_ab_candidate_promotion --config configs/project.yaml --candidate-horizon 35 --candidate-feature-set stable_only --candidate-model logistic_regression --force
+```
+
+The default promoted candidate is:
+
+```text
+35s + stable_only + logistic_regression
+```
+
+Selection modes:
+
+- `explicit`: uses the requested horizon, feature set, and model;
+- `top_recommendation`: uses the first row of `ab_refined_recommendation`;
+- `best_macro_f1`: picks the highest macro F1;
+- `best_b_recall`: prioritizes recall_B when macro F1 is not worse than baseline;
+- `balanced_objective`: combines macro F1, recall_B, and reduced B-predicted-as-A errors.
+
+Ten CSV/Parquet outputs are written under:
+
+```text
+data/gold/modeling/t_side_ab_candidate/
+```
+
+The outputs cover selection, metrics, confusion matrix, out-of-fold predictions, error queue, feature set, feature importance, comparison versus Stage 6 baseline, final decision, and audit. The stage also generates:
+
+```text
+docs/t_side_ab_candidate_model_card.md
+docs/t_side_ab_candidate_baseline_report.md
+configs/modeling/t_side_ab_candidate_baseline.yaml
+notebooks/12_t_side_ab_candidate_promotion.ipynb
+```
+
+Validated Stage 6.3 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Candidate | 35s stable_only logistic_regression |
+| Candidate id | vitality_mirage_t_ab_35s_stable_only_logistic_v1 |
+| Candidate prediction rows | 89 |
+| Candidate error rows | 25 |
+| Selected feature count | 31 |
+| Macro F1 | 0.671 |
+| Recall_B | 0.600 |
+| Delta macro F1 vs matching baseline | +0.114 |
+| Delta recall_B vs matching baseline | +0.160 |
+| Delta B predicted as A | -4 |
+| Decision | promote_as_exploratory_candidate |
+| Audit | warning |
+
+The decision is exploratory because manual review is still pending. Stage 6.3 is useful for reporting and comparison, but it does not make the model final, causal, externally validated, production-ready, or safe to treat as tactical truth without reviewing demos. No-plant rounds remain outside the A/B model.
 
 Validation commands:
 

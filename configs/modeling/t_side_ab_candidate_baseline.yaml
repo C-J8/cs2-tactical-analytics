@@ -1,0 +1,38 @@
+candidate_id: vitality_mirage_t_ab_35s_stable_only_logistic_v1
+target_team: Vitality
+target_map: Mirage
+task: t_side_ab_site_prediction
+label_column: target_site_model_label
+positive_class: B
+candidate_horizon_seconds: 35
+candidate_feature_set: stable_only
+candidate_model_name: logistic_regression
+training_source: data/gold/round_features/round_features_t_side_planted.parquet
+feature_source: data/gold/modeling/t_side_ab_refined_experiment/ab_refined_feature_sets.parquet
+selection_source: data/gold/modeling/t_side_ab_refined_experiment/ab_refined_recommendation.parquet
+no_plant_policy: excluded
+label_confidence_required: high
+manual_review_policy: pending_review_keeps_candidate_exploratory
+metrics:
+  macro_f1: 0.6711012564671102
+  recall_B: 0.6
+  B_predicted_as_A: 10
+  delta_macro_f1: 0.11401694733362067
+  delta_recall_B: 0.15999999999999998
+  delta_B_predicted_as_A: -4.0
+leakage_controls:
+- feature_catalog_usable_for_future_model
+- manual_leakage_token_blocklist
+- identifier_removal
+- horizon_window_filter
+- pre_plant_row_filter_when_plant_time_available
+validation:
+  method: stratified_kfold_out_of_fold
+  n_splits: 5
+  random_seed: 42
+limitations:
+- small_sample
+- class_B_lower_support
+- no_external_validation
+- no_causal_claims
+- manual_review_pending
