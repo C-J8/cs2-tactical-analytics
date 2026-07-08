@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 6.3 -- T-side A/B Candidate Baseline Promotion and Model Card**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 7 -- Final MVP Report Pack**.
 
 Project direction:
 
@@ -29,7 +29,8 @@ Validated local snapshot for Vitality on Mirage:
 - 120 Stage 6.1 selected-model errors analyzed across six horizons;
 - 30 Stage 6.2 controlled horizon/feature-set/model experiments;
 - 1 Stage 6.3 candidate baseline package promoted from Stage 6.2;
-- 133 tests passing and `ruff check .` passing.
+- 1 Stage 7 final report pack with report, appendix, presentation outline, and audit tables;
+- 138 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -53,6 +54,7 @@ python -m src.modeling.t_side_ab_baseline --config configs/project.yaml --force
 python -m src.modeling.t_side_ab_error_analysis --config configs/project.yaml --force
 python -m src.modeling.t_side_ab_refined_experiment --config configs/project.yaml --force
 python -m src.modeling.t_side_ab_candidate_promotion --config configs/project.yaml --force
+python -m src.reporting.build_final_mvp_report --config configs/project.yaml --force
 ```
 
 Important dependency rules:
@@ -67,6 +69,7 @@ Important dependency rules:
 - Stage 6.1 reads Stage 6 outputs only; it interprets errors and never trains a new model.
 - Stage 6.2 reuses Stage 6 leakage controls and compares fixed feature sets against the matching Stage 6 baseline.
 - Stage 6.3 reads Stage 6.2 outputs only; it promotes and documents a candidate without training new models.
+- Stage 7 reads prior outputs only; it consolidates the final MVP report pack and does not alter upstream data.
 
 ## MVP Scope
 
@@ -1130,6 +1133,71 @@ Validated Stage 6.3 snapshot:
 | Audit | warning |
 
 The decision is exploratory because manual review is still pending. Stage 6.3 is useful for reporting and comparison, but it does not make the model final, causal, externally validated, production-ready, or safe to treat as tactical truth without reviewing demos. No-plant rounds remain outside the A/B model.
+
+## Stage 7 -- Final MVP Report Pack
+
+Stage 7 is a documentation and closure stage. It does not train models, tune parameters, create features, change upstream datasets, build a dashboard, export to BigQuery, generate PDF/PPTX, or claim production readiness.
+
+Run:
+
+```bash
+python -m src.reporting.build_final_mvp_report --config configs/project.yaml --force
+```
+
+Useful options:
+
+```bash
+python -m src.reporting.build_final_mvp_report --config configs/project.yaml --dry-run
+python -m src.reporting.build_final_mvp_report --config configs/project.yaml --report-version v1 --force
+python -m src.reporting.build_final_mvp_report --config configs/project.yaml --include-technical-appendix false --force
+```
+
+Stage 7 reads the outputs from Stage 5 through Stage 6.3 and consolidates:
+
+- final project summary;
+- pipeline stage status;
+- data lineage from demos to candidate model;
+- dataset snapshot;
+- tactical findings summary;
+- promoted candidate metrics and error summary;
+- limitations and next steps;
+- artifact manifest;
+- final report audit.
+
+Eleven CSV/Parquet outputs are written under:
+
+```text
+data/gold/reporting/final_mvp/
+```
+
+The stage also generates:
+
+```text
+docs/final_mvp_report.md
+docs/final_mvp_technical_appendix.md
+docs/final_presentation_outline.md
+notebooks/13_final_mvp_report_pack.ipynb
+```
+
+Validated Stage 7 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Report version | v1 |
+| Stage-status rows | 15 |
+| Lineage rows | 13 |
+| Tactical finding rows | 12 |
+| Artifact manifest rows | 10 |
+| Eligible demos | 18 |
+| Feature rounds | 405 |
+| T-side rounds | 180 |
+| T-side planted rounds | 98 |
+| Candidate prediction rows | 89 |
+| Candidate error rows | 25 |
+| Candidate feature count | 31 |
+| Final report audit | warning |
+
+The audit remains `warning` because manual review is still pending. The final MVP report therefore presents the current candidate as exploratory and keeps no-plant, CT-side, causal claims, deployment, and external validation explicitly out of scope.
 
 Validation commands:
 
