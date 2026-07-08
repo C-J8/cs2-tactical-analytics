@@ -385,6 +385,7 @@ def evaluate_horizon(
     horizon: int,
     model_set: list[str],
     random_seed: int,
+    random_forest_estimators: int = 200,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     y = dataset[LABEL_COLUMN].astype(str)
     n_splits = min(5, int(y.value_counts().min()))
@@ -409,7 +410,12 @@ def evaluate_horizon(
                 probabilities[test_index, 0] = float(majority == "A")
                 probabilities[test_index, 1] = float(majority == "B")
             else:
-                pipeline = build_pipeline(train[features], model_key=model_key, random_seed=random_seed)
+                pipeline = build_pipeline(
+                    train[features],
+                    model_key=model_key,
+                    random_seed=random_seed,
+                    random_forest_estimators=random_forest_estimators,
+                )
                 pipeline.fit(train[features], train[LABEL_COLUMN])
                 predictions[test_index] = pipeline.predict(test[features])
                 fold_probabilities = pipeline.predict_proba(test[features])
@@ -447,7 +453,12 @@ def evaluate_horizon(
             )
 
         if model_key != "baseline":
-            fitted = build_pipeline(dataset[features], model_key=model_key, random_seed=random_seed)
+            fitted = build_pipeline(
+                dataset[features],
+                model_key=model_key,
+                random_seed=random_seed,
+                random_forest_estimators=random_forest_estimators,
+            )
             fitted.fit(dataset[features], y)
             importance_rows.extend(extract_feature_importance(fitted, features, catalog, horizon, model_name))
 
@@ -459,7 +470,13 @@ def evaluate_horizon(
     )
 
 
-def build_pipeline(data: pd.DataFrame, *, model_key: str, random_seed: int) -> Pipeline:
+def build_pipeline(
+    data: pd.DataFrame,
+    *,
+    model_key: str,
+    random_seed: int,
+    random_forest_estimators: int = 200,
+) -> Pipeline:
     numeric = [column for column in data.columns if pd.api.types.is_numeric_dtype(data[column]) or pd.api.types.is_bool_dtype(data[column])]
     categorical = [column for column in data.columns if column not in numeric]
     transformers = []
@@ -478,7 +495,12 @@ def build_pipeline(data: pd.DataFrame, *, model_key: str, random_seed: int) -> P
     if model_key == "logistic":
         model = LogisticRegression(class_weight="balanced", max_iter=2000, random_state=random_seed)
     elif model_key == "random_forest":
-        model = RandomForestClassifier(n_estimators=200, class_weight="balanced", random_state=random_seed, n_jobs=-1)
+        model = RandomForestClassifier(
+            n_estimators=random_forest_estimators,
+            class_weight="balanced",
+            random_state=random_seed,
+            n_jobs=-1,
+        )
     else:
         raise ValueError(f"Unsupported trainable model: {model_key}")
     return Pipeline([("preprocessor", preprocessor), ("model", model)])

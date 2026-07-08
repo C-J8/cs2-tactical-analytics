@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 6.1 -- T-side A/B Baseline Error Analysis and Interpretation**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 6.2 -- Focused T-side A/B Feature Refinement Experiment**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, and baseline error interpretation. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, and a focused feature-refinement experiment. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -27,7 +27,8 @@ Validated local snapshot for Vitality on Mirage:
 - 20 Stage 5.2 findings covered by 151 selected finding-round pairs;
 - 18 Stage 6 horizon/model evaluations with out-of-fold predictions;
 - 120 Stage 6.1 selected-model errors analyzed across six horizons;
-- 120 tests passing and `ruff check .` passing.
+- 30 Stage 6.2 controlled horizon/feature-set/model experiments;
+- 125 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -49,6 +50,7 @@ python -m src.analysis.t_side_findings --config configs/project.yaml --force
 python -m src.analysis.t_side_manual_review --config configs/project.yaml --force
 python -m src.modeling.t_side_ab_baseline --config configs/project.yaml --force
 python -m src.modeling.t_side_ab_error_analysis --config configs/project.yaml --force
+python -m src.modeling.t_side_ab_refined_experiment --config configs/project.yaml --force
 ```
 
 Important dependency rules:
@@ -61,6 +63,7 @@ Important dependency rules:
 - Stage 5.2 links Stage 5.1 findings to concrete T-side rounds and must be rebuilt whenever Stage 5.1 changes.
 - Stage 6 trains only on high-confidence planted T-side rounds and must be rebuilt whenever features, round state, or manual decisions change.
 - Stage 6.1 reads Stage 6 outputs only; it interprets errors and never trains a new model.
+- Stage 6.2 reuses Stage 6 leakage controls and compares fixed feature sets against the matching Stage 6 baseline.
 
 ## MVP Scope
 
@@ -997,6 +1000,67 @@ Validated Stage 6.1 snapshot using `best_by_horizon`:
 Every selected model beats the majority baseline in macro F1 at its own horizon, but the error analysis shows that early random-forest models still have weak B recall. The 15s horizon remains useful as the early baseline; 35/45s are candidates for a focused next experiment; 65s is not recommended as the primary horizon because it is later and uses a smaller filtered cohort.
 
 This stage does not establish causal feature effects or production readiness. Plant B remains the lower-support class, no-plant remains outside the model, larger horizons use different cohorts, and manual review is still pending.
+
+## Stage 6.2 -- Focused T-side A/B Feature Refinement Experiment
+
+Stage 6.1 showed that many baseline errors were B predicted as A, including high-confidence mistakes. Stage 6.2 runs a fixed, auditable experiment over five controlled feature sets at 15s, 35s, and 45s. It trains only balanced logistic regression and balanced random forest, then compares every result with the same Stage 6 horizon/model baseline.
+
+Run:
+
+```bash
+python -m src.modeling.t_side_ab_refined_experiment --config configs/project.yaml --force
+```
+
+Useful options:
+
+```bash
+python -m src.modeling.t_side_ab_refined_experiment --config configs/project.yaml --dry-run
+python -m src.modeling.t_side_ab_refined_experiment --config configs/project.yaml --horizons 15,35 --model-set logistic --force
+python -m src.modeling.t_side_ab_refined_experiment --config configs/project.yaml --feature-sets stable_only,b_focused --force
+```
+
+Default feature sets:
+
+- `all_safe`: all Stage 6 leakage-safe and horizon-safe features;
+- `stable_only`: stable/model-specific Stage 6.1 candidates, with a baseline-importance fallback;
+- `no_preround_context`: removes general pre-round context while retaining initial utility inventory;
+- `region_utility_only`: keeps tactical region, position, pressure, and utility signals;
+- `b_focused`: existing B-associated, error-contrast, keyword, and utility features.
+
+No-plant remains outside the experiment. Labels must be high-confidence A/B, identifiers never become training features, features cannot end after the horizon, and rounds planted before a horizon are excluded using the same Stage 6 logic. Manual-review exclusions are applied when available; an all-pending review keeps the experiment preliminary.
+
+Ten CSV/Parquet outputs are written under:
+
+```text
+data/gold/modeling/t_side_ab_refined_experiment/
+```
+
+The outputs include dataset and feature-set audits, metrics, confusion matrices, out-of-fold predictions, importance, B-error summaries, comparison with Stage 6, ranked recommendations, and audit. The stage also generates:
+
+```text
+docs/t_side_ab_refined_experiment_report.md
+notebooks/11_t_side_ab_refined_experiment.ipynb
+```
+
+Validated Stage 6.2 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| High-confidence A/B input rows | 98 |
+| Horizons / feature sets / models | 3 / 5 / 2 |
+| Controlled experiments | 30 |
+| Out-of-fold prediction rows | 2,660 |
+| Top recommendation | 35s stable_only logistic |
+| Top macro F1 | 0.671 |
+| Top recall_B | 0.600 |
+| Delta macro F1 vs matching baseline | +0.114 |
+| Delta recall_B vs matching baseline | +0.160 |
+| Delta B predicted as A | -4 |
+| Audit | ok |
+
+The 45s `stable_only + logistic` experiment reached a higher raw macro F1 (`0.696`) and the same recall_B (`0.600`), but its recall_B gain over the matching baseline was smaller (`+0.050`). The ranked recommendation therefore keeps 35s first because the experiment's primary objective is improving B behavior, not maximizing one aggregate metric.
+
+Stage 6.2 is not a final model or a tuning sweep. The sample remains small and imbalanced, random round-level folds are not external validation, and manual review remains pending. The next decision is whether to promote one candidate as the next baseline or complete qualitative error review first.
 
 Validation commands:
 
