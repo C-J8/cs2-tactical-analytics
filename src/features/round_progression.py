@@ -70,8 +70,10 @@ def build_round_outcome_context(
     bomb_carrier_timeline: pd.DataFrame,
     *,
     windows: list[FeatureWindow] | None = None,
+    pressure_groups: set[str] | None = None,
 ) -> pd.DataFrame:
     windows = windows or PROGRESSION_WINDOWS
+    pressure_groups = pressure_groups or PRESSURE_GROUPS
     rows = []
     for _, row in round_features.iterrows():
         round_feature_id = row["round_feature_id"]
@@ -102,12 +104,12 @@ def build_round_outcome_context(
             "last_target_team_death_region": last_target_death,
             "first_target_team_death_region": first_target_death,
             "first_contact_region": first_contact,
-            "max_pressure_region_0_115": dominant_region(round_timeline, 0, 115, window_type="cumulative"),
-            "max_pressure_region_0_55": dominant_region(round_timeline, 0, 55, window_type="cumulative"),
-            "final_pressure_region_105_115": dominant_region(round_timeline, 105, 115, window_type="interval"),
-            "max_pressure_region_0_20": dominant_region(round_timeline, 0, 20),
-            "max_pressure_region_0_30": dominant_region(round_timeline, 0, 30),
-            "final_pressure_region_20_30": dominant_region(round_timeline, 20, 30),
+            "max_pressure_region_0_115": dominant_region(round_timeline, 0, 115, window_type="cumulative", pressure_groups=pressure_groups),
+            "max_pressure_region_0_55": dominant_region(round_timeline, 0, 55, window_type="cumulative", pressure_groups=pressure_groups),
+            "final_pressure_region_105_115": dominant_region(round_timeline, 105, 115, window_type="interval", pressure_groups=pressure_groups),
+            "max_pressure_region_0_20": dominant_region(round_timeline, 0, 20, pressure_groups=pressure_groups),
+            "max_pressure_region_0_30": dominant_region(round_timeline, 0, 30, pressure_groups=pressure_groups),
+            "final_pressure_region_20_30": dominant_region(round_timeline, 20, 30, pressure_groups=pressure_groups),
             "bomb_last_known_region": bomb_last,
             "bomb_drop_region": bomb_drop,
             "round_progression_signature": signature,
@@ -173,7 +175,15 @@ def bomb_carrier_region_columns(bomb: pd.DataFrame, windows: list[FeatureWindow]
     return columns
 
 
-def dominant_region(round_timeline: pd.DataFrame, window_start: int, window_end: int, *, window_type: str | None = None) -> str | None:
+def dominant_region(
+    round_timeline: pd.DataFrame,
+    window_start: int,
+    window_end: int,
+    *,
+    window_type: str | None = None,
+    pressure_groups: set[str] | None = None,
+) -> str | None:
+    pressure_groups = pressure_groups or PRESSURE_GROUPS
     if round_timeline.empty or not {"window_start", "window_end", "region_group", "time_spent_total"}.issubset(round_timeline.columns):
         return None
     window = round_timeline[(round_timeline["window_start"] >= window_start) & (round_timeline["window_end"] <= window_end)]
@@ -181,7 +191,7 @@ def dominant_region(round_timeline: pd.DataFrame, window_start: int, window_end:
         window = window[window["window_type"] == window_type]
     if window.empty:
         return None
-    pressure = window[window["region_group"].isin(PRESSURE_GROUPS)]
+    pressure = window[window["region_group"].isin(pressure_groups)]
     source = pressure if not pressure.empty else window
     grouped = source.groupby("region_group")["time_spent_total"].sum().sort_values(ascending=False)
     return str(grouped.index[0]) if not grouped.empty else None

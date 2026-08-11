@@ -1,0 +1,18 @@
+registry_version: v1
+maps:
+- map_id: mirage
+  display_name: Mirage
+  game_map_name: de_mirage
+  config_path: configs/maps/mirage.yaml
+  region_schema_version: v1
+  status: active
+  is_reference_map: true
+  notes: Reference map migrated from configs/maps/mirage_regions.yaml.
+- map_id: inferno
+  display_name: Inferno
+  game_map_name: de_inferno
+  config_path: configs/maps/inferno.yaml
+  region_schema_version: v1
+  status: onboarding
+  is_reference_map: false
+  notes: First new-map onboarding registry. Physical regions are unresolved until Inferno parser/nav area inventory is available.

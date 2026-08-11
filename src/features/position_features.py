@@ -46,22 +46,30 @@ def load_early_ticks(ticks_path: str, round_base: pd.DataFrame, *, windows: list
     columns = ["source_parse_id", "series_id", "target_team", "map_name", "round_num", "tick", "X", "Y", "Z", "side", "name", "steamid", "place", "health", "inventory"]
     tick_scan = pl.scan_parquet(ticks_path)
     tick_columns = [column for column in columns if column in tick_scan.collect_schema().names()]
-    round_lazy = pl.from_pandas(round_filter).lazy()
     window_end = max_window_end(windows)
-    ticks = (
-        tick_scan.select(tick_columns)
-        .join(round_lazy, left_on=["source_parse_id", "round_num"], right_on=["parse_id", "round_num"], how="inner", suffix="_round")
-        .filter(pl.col("side") == "t")
-        .with_columns(((pl.col("tick") - pl.col("anchor_tick")) / tickrate).alias("seconds_from_freeze_end"))
-        .filter((pl.col("seconds_from_freeze_end") >= 0) & (pl.col("seconds_from_freeze_end") <= window_end))
-        .filter(pl.col("tick") <= pl.col("round_end_tick"))
-        .with_columns(pl.col("seconds_from_freeze_end").floor().cast(pl.Int64).alias("second_bucket"))
-        .sort("tick")
-        .group_by(["round_feature_id", "steamid", "second_bucket"])
-        .agg(pl.all().last())
-        .collect()
-        .to_pandas()
-    )
+    frames = []
+    for parse_id, parse_rounds in round_filter.groupby("parse_id", dropna=False):
+        if pd.isna(parse_id):
+            continue
+        round_lazy = pl.from_pandas(parse_rounds).lazy()
+        frame = (
+            tick_scan.select(tick_columns)
+            .filter(pl.col("source_parse_id").cast(pl.Utf8) == str(parse_id))
+            .join(round_lazy, left_on=["source_parse_id", "round_num"], right_on=["parse_id", "round_num"], how="inner", suffix="_round")
+            .filter(pl.col("side") == "t")
+            .with_columns(((pl.col("tick") - pl.col("anchor_tick")) / tickrate).alias("seconds_from_freeze_end"))
+            .filter((pl.col("seconds_from_freeze_end") >= 0) & (pl.col("seconds_from_freeze_end") <= window_end))
+            .filter(pl.col("tick") <= pl.col("round_end_tick"))
+            .with_columns(pl.col("seconds_from_freeze_end").floor().cast(pl.Int64).alias("second_bucket"))
+            .sort(["round_feature_id", "steamid", "second_bucket", "tick"])
+            .group_by(["round_feature_id", "steamid", "second_bucket"], maintain_order=True)
+            .agg(pl.all().last())
+            .collect()
+            .to_pandas()
+        )
+        if not frame.empty:
+            frames.append(frame)
+    ticks = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     if ticks.empty:
         return empty_early_ticks()
     return ticks
@@ -73,14 +81,16 @@ def build_position_outputs(
     *,
     region_lookup: dict,
     place_column: str | None,
+    region_feature_groups: dict[str, str] | None = None,
     windows: list[FeatureWindow] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     windows = windows or configured_feature_windows(FeatureWindowsConfig())
+    region_feature_groups = region_feature_groups or REGION_FEATURE_GROUPS
     if early_ticks.empty:
-        return empty_region_presence(), empty_position_features(round_base, windows)
+        return empty_region_presence(), empty_position_features(round_base, windows, region_feature_groups=region_feature_groups)
     ticks = add_region_columns(early_ticks, place_column=place_column, lookup=region_lookup)
     region_presence = build_region_presence(ticks, windows)
-    wide = build_position_wide(ticks, round_base, windows)
+    wide = build_position_wide(ticks, round_base, windows, region_feature_groups=region_feature_groups)
     return region_presence, wide
 
 
@@ -157,8 +167,15 @@ def build_region_presence(ticks: pd.DataFrame, windows: list[FeatureWindow] | No
     ]
 
 
-def build_position_wide(ticks: pd.DataFrame, round_base: pd.DataFrame, windows: list[FeatureWindow] | None = None) -> pd.DataFrame:
+def build_position_wide(
+    ticks: pd.DataFrame,
+    round_base: pd.DataFrame,
+    windows: list[FeatureWindow] | None = None,
+    *,
+    region_feature_groups: dict[str, str] | None = None,
+) -> pd.DataFrame:
     windows = windows or configured_feature_windows(FeatureWindowsConfig())
+    region_feature_groups = region_feature_groups or REGION_FEATURE_GROUPS
     rows = []
     for round_feature_id, group in ticks.groupby("round_feature_id"):
         row: dict[str, object] = {"round_feature_id": round_feature_id}
@@ -173,12 +190,12 @@ def build_position_wide(ticks: pd.DataFrame, round_base: pd.DataFrame, windows: 
             row[f"players_alive_{seconds}s"] = players_alive_at(window, seconds)
         for feature_window in windows:
             window = group[(group["seconds_from_freeze_end"] >= feature_window.start) & (group["seconds_from_freeze_end"] < feature_window.end)]
-            for region_group, feature_name in REGION_FEATURE_GROUPS.items():
+            for region_group, feature_name in region_feature_groups.items():
                 in_region = window[window["region_group"] == region_group]
                 row[f"players_{feature_name}_{feature_window.suffix}"] = in_region["steamid"].nunique()
                 row[f"time_{feature_name}_{feature_window.suffix}"] = len(in_region)
         legacy_window = group[(group["seconds_from_freeze_end"] >= 0) & (group["seconds_from_freeze_end"] < 20)]
-        for region_group, feature_name in REGION_FEATURE_GROUPS.items():
+        for region_group, feature_name in region_feature_groups.items():
             in_region = legacy_window[legacy_window["region_group"] == region_group]
             legacy_name = "mid" if feature_name == "mid_control" else feature_name
             row[f"players_{legacy_name}_0_20"] = in_region["steamid"].nunique()
@@ -232,14 +249,20 @@ def empty_region_presence() -> pd.DataFrame:
     )
 
 
-def empty_position_features(round_base: pd.DataFrame, windows: list[FeatureWindow] | None = None) -> pd.DataFrame:
+def empty_position_features(
+    round_base: pd.DataFrame,
+    windows: list[FeatureWindow] | None = None,
+    *,
+    region_feature_groups: dict[str, str] | None = None,
+) -> pd.DataFrame:
     windows = windows or configured_feature_windows(FeatureWindowsConfig())
+    region_feature_groups = region_feature_groups or REGION_FEATURE_GROUPS
     result = round_base[["round_feature_id"]].copy() if "round_feature_id" in round_base.columns else pd.DataFrame(columns=["round_feature_id"])
     for seconds in [10, 15, 20, 25, 115]:
         for column in ["team_center_x", "team_center_y", "team_center_z", "team_spread", "avg_pairwise_distance", "players_alive"]:
             result[f"{column}_{seconds}s"] = None
     for feature_window in windows:
-        for feature in REGION_FEATURE_GROUPS.values():
+        for feature in region_feature_groups.values():
             result[f"players_{feature}_{feature_window.suffix}"] = 0
             result[f"time_{feature}_{feature_window.suffix}"] = 0
     for feature in ["mid", "a_pressure", "b_pressure", "ct_space"]:

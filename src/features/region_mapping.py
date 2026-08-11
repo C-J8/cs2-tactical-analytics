@@ -5,6 +5,9 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from src.maps.registry import MapRegistry, load_map_registry
+from src.maps.semantic import place_column_candidates_from_registry, place_lookup_from_registry
+
 
 UNKNOWN_REGION = "UNKNOWN"
 UNKNOWN_GROUP = "UNKNOWN"
@@ -27,6 +30,11 @@ def build_place_lookup(config: dict) -> dict[str, tuple[str, str]]:
         for alias in [region_name, *aliases]:
             lookup[normalize_place(alias)] = (region_name, region_group)
     return lookup
+
+
+def load_region_mapping_from_registry(map_name: str, *, registry_path: Path = Path("configs/maps/map_registry.yaml")) -> tuple[MapRegistry, dict[str, tuple[str, str]], dict]:
+    registry = load_map_registry(map_name, registry_path=registry_path)
+    return registry, place_lookup_from_registry(registry), {"place_column_candidates": place_column_candidates_from_registry(registry)}
 
 
 def choose_place_column(columns: list[str], config: dict) -> str | None:

@@ -10,9 +10,10 @@ from src.features.bomb_context import build_bomb_carrier_timeline
 from src.features.death_context import build_death_context
 from src.features.feature_windows import configured_feature_windows
 from src.features.position_features import build_position_outputs, load_early_ticks
-from src.features.region_mapping import build_place_lookup, choose_place_column, load_region_config
+from src.features.region_mapping import choose_place_column, load_region_mapping_from_registry
 from src.features.round_progression import build_round_outcome_context, build_round_region_timeline
 from src.features.side_dataset_audit import build_side_dataset_audit
+from src.maps.semantic import legacy_feature_groups_for_registry, legacy_groups_for_semantic
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 
@@ -25,6 +26,7 @@ def run_side_dataset_pipeline(
     target_team: str | None = None,
     target_map: str | None = None,
     window_end: int | None = None,
+    map_registry_path: Path = Path("configs/maps/map_registry.yaml"),
 ) -> tuple[dict[str, pd.DataFrame], dict[str, Path], dict[str, int]]:
     project = load_project_config(config_path)
     target_team = target_team or project.target_teams[0]
@@ -47,11 +49,21 @@ def run_side_dataset_pipeline(
     filtered = round_features[(round_features["target_team"] == target_team) & (round_features["map_name"] == target_map)].copy()
     datasets = build_side_datasets(filtered)
 
-    region_config = load_region_config(Path("configs/maps/mirage_regions.yaml"))
-    region_lookup = build_place_lookup(region_config)
+    registry, region_lookup, region_config = load_region_mapping_from_registry(target_map, registry_path=map_registry_path)
+    region_feature_groups = legacy_feature_groups_for_registry(registry, ["mid_control", "a_pressure", "b_pressure", "ct_space"])
+    pressure_groups = set()
+    for semantic_id in ["mid_control", "a_pressure", "b_pressure", "site_a", "site_b"]:
+        pressure_groups.update(legacy_groups_for_semantic(registry, semantic_id))
     early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), filtered, windows=feature_windows)
     place_column = choose_place_column(list(early_ticks.columns), region_config)
-    region_presence, _ = build_position_outputs(early_ticks, filtered, region_lookup=region_lookup, place_column=place_column, windows=feature_windows)
+    region_presence, _ = build_position_outputs(
+        early_ticks,
+        filtered,
+        region_lookup=region_lookup,
+        place_column=place_column,
+        region_feature_groups=region_feature_groups,
+        windows=feature_windows,
+    )
 
     kills = pd.read_parquet(silver_dir / "kills.parquet") if (silver_dir / "kills.parquet").exists() else pd.DataFrame()
     bomb = pd.read_parquet(silver_dir / "bomb.parquet") if (silver_dir / "bomb.parquet").exists() else pd.DataFrame()
@@ -60,7 +72,7 @@ def run_side_dataset_pipeline(
     death_context = build_death_context(kills, filtered, region_lookup=region_lookup)
     bomb_timeline = build_bomb_carrier_timeline(early_ticks, filtered, bomb, region_lookup=region_lookup, place_column=place_column, windows=feature_windows)
     region_timeline = build_round_region_timeline(region_presence, filtered, utility_events, death_context, bomb_timeline, windows=feature_windows)
-    outcome_context = build_round_outcome_context(filtered, region_timeline, death_context, bomb_timeline, windows=feature_windows)
+    outcome_context = build_round_outcome_context(filtered, region_timeline, death_context, bomb_timeline, windows=feature_windows, pressure_groups=pressure_groups)
     notes = {
         "ct_side": "Uses round_state_resolved when available; a zero CT-side count now indicates side resolution should be audited."
     }
@@ -214,6 +226,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-team", default=None)
     parser.add_argument("--target-map", default=None)
     parser.add_argument("--window-end", type=int, default=None, help="Deprecated; feature windows are read from configs/project.yaml.")
+    parser.add_argument("--map-registry", type=Path, default=Path("configs/maps/map_registry.yaml"))
     return parser.parse_args()
 
 
@@ -227,6 +240,7 @@ def main() -> None:
         target_team=args.target_team,
         target_map=args.target_map,
         window_end=args.window_end,
+        map_registry_path=args.map_registry,
     )
     print_summary(outputs, summary)
 

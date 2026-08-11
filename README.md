@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 7 -- Final MVP Report Pack**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.4 -- First New Map Onboarding: Vitality Inferno**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, and a focused feature-refinement experiment. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, and the first conservative new-map onboarding audit for Vitality Inferno. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -30,7 +30,12 @@ Validated local snapshot for Vitality on Mirage:
 - 30 Stage 6.2 controlled horizon/feature-set/model experiments;
 - 1 Stage 6.3 candidate baseline package promoted from Stage 6.2;
 - 1 Stage 7 final report pack with report, appendix, presentation outline, and audit tables;
-- 138 tests passing and `ruff check .` passing.
+- 1 Stage 8.0 frozen feature contract with 492 current MVP features;
+- 1 Stage 8.1 Mirage map registry with 15 physical regions and 8 semantic groups;
+- 1 Stage 8.2 map-ready feature audit with 1511 compatibility checks passing;
+- 1 Stage 8.3 Mirage regression gate with 16 datasets and 14 critical invariants passing;
+- 1 Stage 8.4 Inferno onboarding package showing 5 local Inferno demos but 0 feature-eligible Inferno demos until the map registry receives verified parser/nav area names;
+- 170 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -55,6 +60,10 @@ python -m src.modeling.t_side_ab_error_analysis --config configs/project.yaml --
 python -m src.modeling.t_side_ab_refined_experiment --config configs/project.yaml --force
 python -m src.modeling.t_side_ab_candidate_promotion --config configs/project.yaml --force
 python -m src.reporting.build_final_mvp_report --config configs/project.yaml --force
+python -m src.features.build_feature_contract --config configs/project.yaml --force
+python -m src.maps.build_map_registry --config configs/project.yaml --force
+python -m src.validation.mirage_regression_gate --config configs/project.yaml --force
+python -m src.maps.onboard_map --config configs/project.yaml --map Inferno --target-team Vitality --force
 ```
 
 Important dependency rules:
@@ -70,6 +79,11 @@ Important dependency rules:
 - Stage 6.2 reuses Stage 6 leakage controls and compares fixed feature sets against the matching Stage 6 baseline.
 - Stage 6.3 reads Stage 6.2 outputs only; it promotes and documents a candidate without training new models.
 - Stage 7 reads prior outputs only; it consolidates the final MVP report pack and does not alter upstream data.
+- Stage 8.0 reads existing feature/catalog/model metadata only; it freezes feature classifications and does not recalculate feature values.
+- Stage 8.1 reads the frozen feature contract and current Mirage region mapping only; it writes map registry metadata and does not recalculate feature values.
+- Stage 8.2 makes Stage 4 feature engineering consume the map registry and feature contract; it keeps Mirage feature names/values stable and writes compatibility audits.
+- Stage 8.3 compares the current Mirage MVP against an explicit frozen baseline and blocks new-map onboarding on any critical regression.
+- Stage 8.4 registers Inferno and writes onboarding/readiness audits under `data/gold/maps/inferno/onboarding/`; it does not train models, scrape HLTV, or overwrite Mirage feature outputs.
 
 ## MVP Scope
 
@@ -98,9 +112,11 @@ Edit these files to expand the catalog without changing code:
 - `configs/project.yaml`: mode, date window, target maps, target teams, output formats, cache/rate limit.
 - `configs/teams.yaml`: canonical team names, HLTV ids, aliases.
 - `configs/maps.yaml`: canonical map names and aliases.
+- `configs/maps/map_registry.yaml`: global index of versioned map-region registry configs.
+- `configs/maps/mirage.yaml`: Mirage reference registry for physical regions, semantic groups, aliases, and bombsites.
 - `configs/player_rosters.yaml`: player nicknames by team for side and plant ownership resolution.
 
-Adding a new team only requires adding it to `configs/teams.yaml` and listing it in `target_teams`. Adding a new map only requires adding it to `configs/maps.yaml` and listing it in `target_maps`.
+Adding a new team only requires adding it to `configs/teams.yaml` and listing it in `target_teams`. Adding a production-ready map now also requires a map-registry config with physical regions, semantic groups, aliases, and bombsites before feature engineering is refactored to consume it.
 
 When a demo does not expose reliable team columns, the pipeline can still infer side ownership from player names in ticks. Keep `configs/player_rosters.yaml` updated with the active/historical nicknames observed in the demos. This is especially useful when `opponent = unknown` in catalog metadata but the demo still contains recognizable player names.
 
@@ -1198,6 +1214,348 @@ Validated Stage 7 snapshot:
 | Final report audit | warning |
 
 The audit remains `warning` because manual review is still pending. The final MVP report therefore presents the current candidate as exploratory and keeps no-plant, CT-side, causal claims, deployment, and external validation explicitly out of scope.
+
+## Stage 8.0 -- Feature Contract & Freeze
+
+Stage 8.0 freezes the current MVP feature inventory as metadata. It does not create new features, recalculate round features, rename columns, alter labels, train models, build a dashboard, or remove any existing dataset columns.
+
+Run:
+
+```bash
+python -m src.features.build_feature_contract --config configs/project.yaml --force
+```
+
+Useful options:
+
+```bash
+python -m src.features.build_feature_contract --config configs/project.yaml --dry-run
+python -m src.features.build_feature_contract --config configs/project.yaml --target-map Mirage --contract-version v1 --force
+```
+
+The contract classifies each known feature by family, semantic role, lifecycle phase, temporal window, leakage risk, model/dashboard eligibility, side scope, map portability, region dependency, and horizon eligibility. It becomes the source of truth for future map expansion work.
+
+Map portability terms:
+
+- `global`: feature can be reused across maps without a map-specific region definition, such as round context or starting utility inventory.
+- `map_abstract`: feature is portable in concept but requires each map to define the semantic region, such as `mid_control`, `a_pressure`, or `b_pressure`.
+- `map_specific`: feature depends on a named or geometric concept that is not automatically portable.
+- `unknown`: feature requires manual classification before expansion.
+
+`modeling_allowed` and `dashboard_allowed` are intentionally separate. A feature can be useful for EDA/dashboard display while still being blocked from modeling because it is an identifier, target label, post-round outcome, plant result, or quality/audit field.
+
+Seven CSV/Parquet outputs are written under:
+
+```text
+data/gold/features/feature_contract/
+```
+
+The stage also generates:
+
+```text
+configs/features/feature_contract.yaml
+docs/feature_contract.md
+notebooks/14_feature_contract.ipynb
+```
+
+Validated Stage 8.0 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Total features | 492 |
+| Modeling-allowed features | 471 |
+| Dashboard-allowed features | 479 |
+| Temporal features | 448 |
+| Global features | 184 |
+| Map-abstract features | 308 |
+| Map-specific features | 0 |
+| Features requiring map registry | 308 |
+| Unknown classification rows | 22 |
+| Audit | warning |
+
+The audit is `warning` because the contract intentionally preserves a review queue for uncertain classifications. Stage 8.1 will use this contract to define the Map Geometry & Region Registry, especially for map-abstract features that require semantic regions per map.
+
+## Stage 8.1 -- Map Geometry & Region Registry
+
+Stage 8.1 formalizes Mirage as the reference map registry. It separates physical map regions, tactical semantic groups, aliases, bombsites, and feature-contract coverage into versioned metadata.
+
+Run:
+
+```bash
+python -m src.maps.build_map_registry --config configs/project.yaml --force
+```
+
+Useful options:
+
+```bash
+python -m src.maps.build_map_registry --config configs/project.yaml --dry-run
+python -m src.maps.build_map_registry --config configs/project.yaml --map Mirage --registry-version v1 --force
+```
+
+This stage does not refactor feature engineering yet. It does not recalculate `round_features_mvp`, `round_features_t_side_all`, `round_features_t_side_planted`, model outputs, EDA outputs, or final reports. It migrates the existing Mirage place-name region mapping from `configs/maps/mirage_regions.yaml` into a registry schema without inventing coordinates or changing current region behavior.
+
+The registry separates:
+
+- physical regions: concrete Mirage places such as `palace`, `a_ramp`, `connector`, `b_apps`, and `market`;
+- semantic groups: portable tactical concepts such as `mid_control`, `a_pressure`, `b_pressure`, `ct_space`, `site_a`, and `site_b`;
+- bombsites: explicit A/B site membership for future plant/site-pressure logic;
+- feature coverage: every frozen feature with `region_dependency = true` is checked against the registry.
+
+Eight CSV/Parquet outputs are written under:
+
+```text
+data/gold/maps/map_registry/
+```
+
+The stage also generates:
+
+```text
+configs/maps/map_registry.yaml
+configs/maps/mirage.yaml
+docs/map_geometry_region_registry.md
+notebooks/15_map_region_registry.ipynb
+```
+
+Validated Stage 8.1 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Maps registered | 1 |
+| Reference map | mirage |
+| Physical regions | 15 |
+| Semantic groups | 8 |
+| Region-semantic mappings | 15 |
+| Bombsite mappings | 2 |
+| Region-dependent features | 308 |
+| Resolved region features | 308 |
+| Unresolved region features | 0 |
+| Candidate region features | 11 |
+| Candidate region features unresolved | 0 |
+| Unknown rows | 0 |
+| Ready for Stage 8.2 map-feature refactor | true |
+| Audit | ok |
+
+Mirage is the only production registry in this stage. New maps are intentionally out of scope until their physical regions, semantic mappings, and bombsites can be reviewed explicitly.
+
+Stage 8.2 will make feature engineering consume `configs/maps/map_registry.yaml`, `configs/maps/mirage.yaml`, and `configs/features/feature_contract.yaml` while preserving current Mirage feature values.
+
+## Stage 8.2 -- Map-Ready Feature Refactor
+
+Stage 8.2 refactors the spatial feature path so map-dependent features resolve through the map registry and the frozen feature contract instead of reading Mirage-specific region definitions directly inside the feature engine.
+
+Run:
+
+```bash
+python -m src.features.build_round_features --config configs/project.yaml --force
+python -m src.features.side_datasets --config configs/project.yaml --force
+```
+
+Useful options:
+
+```bash
+python -m src.features.build_round_features --config configs/project.yaml --dry-run
+python -m src.features.build_round_features --config configs/project.yaml --map-registry configs/maps/map_registry.yaml --feature-contract data/gold/features/feature_contract/feature_contract.parquet --force
+```
+
+What changed architecturally:
+
+- `build_round_features` loads `configs/maps/map_registry.yaml` and resolves the active map before region features are generated.
+- Mirage place-name aliases now come from `configs/maps/mirage.yaml`, which was migrated from the previous `mirage_regions.yaml`.
+- Map-abstract features such as `players_mid_control_*`, `players_a_pressure_*`, and `players_b_pressure_*` resolve through semantic groups.
+- Global features bypass the registry.
+- `side_datasets` uses the same registry-backed lookup when rebuilding region timeline, death context, bomb carrier timeline, and outcome context.
+- No new map, feature, model, label, dashboard, or training stage was added.
+
+The main feature output names remain unchanged. Stage 8.2 still writes:
+
+```text
+data/gold/round_features/round_features_mvp.*
+data/gold/region_presence/region_presence_by_round.parquet
+data/gold/round_progression/round_region_timeline.*
+data/gold/round_features/round_features_t_side_all.*
+data/gold/round_features/round_features_t_side_planted.*
+```
+
+The new audits are written under:
+
+```text
+data/gold/feature_audit/map_feature_refactor_audit.*
+data/gold/feature_audit/map_feature_registry_usage.*
+data/gold/feature_audit/map_feature_compatibility.*
+data/gold/feature_audit/map_feature_unknowns.*
+```
+
+Validated Stage 8.2 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Rounds processed | 405 |
+| Features generated | 487 |
+| Region-dependent features | 308 |
+| Resolved region features | 308 |
+| Unresolved region features | 0 |
+| Candidate features expected | 31 |
+| Candidate features found | 31 |
+| Candidate features missing | 0 |
+| Candidate feature values changed | 0 |
+| Compatibility checks | 1511 |
+| Compatibility check status | passed |
+| Map feature engine ready | true |
+| Audit | ok |
+
+Stage 8.2 includes a deterministic tick-selection step for player/second buckets. This is necessary so repeated feature builds compare cleanly at strict numeric tolerance.
+
+The detailed report and notebook are:
+
+```text
+docs/map_ready_feature_refactor.md
+notebooks/16_map_ready_feature_refactor.ipynb
+```
+
+Stage 8.3 will be the formal Mirage Regression / Backward Compatibility Gate with a full downstream rerun.
+
+## Stage 8.3 -- Mirage Regression / Backward Compatibility Gate
+
+Stage 8.3 is the formal regression gate for the map-ready refactor. It does not train a model, add a map, tune thresholds, improve regions, or change labels. It compares the current Mirage MVP outputs against an explicitly created frozen baseline.
+
+Create the baseline explicitly the first time:
+
+```bash
+python -m src.validation.mirage_regression_gate --config configs/project.yaml --baseline-mode create --force
+```
+
+Run the normal gate:
+
+```bash
+python -m src.validation.mirage_regression_gate --config configs/project.yaml --force
+```
+
+Optional rerun mode refreshes the validation stages before comparing:
+
+```bash
+python -m src.validation.mirage_regression_gate --config configs/project.yaml --rerun --force
+```
+
+The gate validates:
+
+- feature-eligible demos;
+- parse-quality output when available;
+- `round_features_mvp`;
+- `region_presence_by_round`;
+- `round_region_timeline`;
+- `round_state_resolved`;
+- T-side, planted T-side, and CT-side datasets;
+- feature contract and map registry metadata;
+- Stage 6.3 candidate selection, feature set, metrics, and candidate input rows.
+
+The baseline manifest is stored under:
+
+```text
+data/gold/validation/mirage_regression_baseline/
+```
+
+Gate outputs are written under:
+
+```text
+data/gold/validation/mirage_regression_gate/
+```
+
+The generated report and notebook are:
+
+```text
+docs/mirage_regression_gate.md
+notebooks/17_mirage_regression_gate.ipynb
+```
+
+Validated Stage 8.3 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Datasets checked | 16 |
+| Datasets passed | 16 |
+| Datasets failed | 0 |
+| Schema checks | 2218 |
+| Row checks | 16 |
+| Feature value checks | 487 |
+| Critical invariants | 14 |
+| Critical invariants failed | 0 |
+| Candidate compatible | true |
+| Feature engine compatible | true |
+| Round state compatible | true |
+| Side datasets compatible | true |
+| ready_for_new_map_onboarding | true |
+| Overall status | passed |
+
+New map onboarding should only start when:
+
+```text
+ready_for_new_map_onboarding = true
+```
+
+## Stage 8.4 -- First New Map Onboarding: Vitality Inferno
+
+Stage 8.4 adds Inferno as the first non-Mirage map in the project architecture. Vitality remains the only target team and the intended analytical scope remains T-side. This stage does not train a new model, reuse Mirage predictions, scrape HLTV, change frozen feature definitions, or add another team/map.
+
+Run the onboarding audit:
+
+```bash
+python -m src.maps.onboard_map --config configs/project.yaml --map Inferno --target-team Vitality --force
+```
+
+Optional pipeline execution is guarded and conservative:
+
+```bash
+python -m src.maps.onboard_map --config configs/project.yaml --map Inferno --target-team Vitality --run-pipeline --force
+```
+
+The required precondition is still Stage 8.3:
+
+```text
+ready_for_new_map_onboarding = true
+```
+
+If the Mirage regression gate has not passed, Stage 8.4 aborts. `--force` cannot bypass that rule.
+
+Stage 8.4 writes:
+
+```text
+data/gold/maps/inferno/onboarding/
+docs/inferno_onboarding_report.md
+notebooks/18_inferno_onboarding.ipynb
+configs/maps/inferno.yaml
+```
+
+The onboarding outputs include:
+
+- data availability;
+- region inventory;
+- semantic coverage;
+- full feature-contract coverage;
+- Mirage candidate feature portability as metadata only;
+- dataset snapshot;
+- feature quality checks when data exists;
+- unknowns/blockers;
+- readiness audit.
+
+Current Stage 8.4 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Map registered | Inferno |
+| Target team | Vitality |
+| Local Inferno demos found | 5 |
+| Parsed Inferno demos in silver tables | 0 |
+| Feature-eligible Inferno demos | 0 |
+| Required map-abstract semantics | 4 |
+| Resolved required semantics | 0 |
+| Mirage candidate features portable now | 20 of 31 |
+| pipeline_execution_status | blocked_by_data |
+| ready_for_inferno_feature_run | false |
+| ready_for_inferno_eda | false |
+| ready_for_inferno_modeling_evaluation | false |
+
+Important interpretation: feature portability does not mean the Mirage model works on Inferno. It only says a feature definition is global or could be produced through the same semantic name once Inferno has verified physical region mappings.
+
+The current Inferno registry intentionally uses `named_area` placeholders marked `unresolved`. This is deliberate. No Inferno Awpy/nav area inventory is available locally yet, and the project should not invent coordinates or fake area names. The next practical step is to confirm real Inferno parser/nav place names, update `configs/maps/inferno.yaml`, then re-run parsing/quality with Inferno explicitly targeted.
 
 Validation commands:
 

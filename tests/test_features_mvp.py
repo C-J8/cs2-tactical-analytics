@@ -217,6 +217,7 @@ def test_round_features_and_audit_are_generated() -> None:
 
 def test_feature_pipeline_dry_run_does_not_overwrite(tmp_path: Path) -> None:
     config_path = _write_config(tmp_path)
+    _write_map_ready_inputs(tmp_path)
     silver_dir = tmp_path / "data/silver/parsed_demos"
     silver_dir.mkdir(parents=True)
     _feature_eligible().to_parquet(silver_dir / "feature_eligible_demos.parquet", index=False)
@@ -227,9 +228,88 @@ def test_feature_pipeline_dry_run_does_not_overwrite(tmp_path: Path) -> None:
     out = Path("data/gold/round_features/round_features_mvp.csv")
     old_content = out.read_text(encoding="utf-8") if out.exists() else None
 
-    _, outputs, summary = run_feature_pipeline(config_path, dry_run=True)
+    _, outputs, summary = run_feature_pipeline(config_path, dry_run=True, map_registry_path=tmp_path / "configs/maps/map_registry.yaml")
 
     assert outputs == {}
     assert summary["rounds_generated"] == 2
     if old_content is not None:
         assert out.read_text(encoding="utf-8") == old_content
+
+
+def _write_map_ready_inputs(tmp_path: Path) -> None:
+    maps_dir = tmp_path / "configs" / "maps"
+    maps_dir.mkdir(parents=True, exist_ok=True)
+    (maps_dir / "map_registry.yaml").write_text(
+        """
+registry_version: v1
+maps:
+  - map_id: mirage
+    display_name: Mirage
+    game_map_name: de_mirage
+    config_path: configs/maps/mirage.yaml
+    region_schema_version: v1
+    status: active
+    is_reference_map: true
+""".strip(),
+        encoding="utf-8",
+    )
+    (maps_dir / "mirage.yaml").write_text(
+        """
+map_id: mirage
+display_name: Mirage
+game_map_name: de_mirage
+region_schema_version: v1
+coordinate_system:
+  source: test
+physical_regions:
+  - region_id: mid
+    display_name: Mid
+    geometry:
+      type: named_area
+      source_region_group: MID_CONTROL
+    semantic_tags: [mid_control]
+    site_affinity: []
+    region_scope: map_specific
+    priority: 100
+    boundary_policy: existing_behavior
+    aliases: [Middle]
+    status: active
+semantic_groups:
+  mid_control:
+    description: Mid control.
+    member_regions: [mid]
+aliases:
+  mid: [Middle]
+bombsites:
+  A:
+    region_ids: [mid]
+  B:
+    region_ids: [mid]
+""".strip(),
+        encoding="utf-8",
+    )
+    contract_dir = tmp_path / "data" / "gold" / "features" / "feature_contract"
+    contract_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "feature_contract_version": "v1",
+                "feature_name": "players_mid_control_0_15",
+                "feature_family": "region_position",
+                "map_scope": "map_abstract",
+                "region_dependency": True,
+                "region_semantic": "mid_control",
+            },
+            {
+                "feature_contract_version": "v1",
+                "feature_name": "team_smokes_start",
+                "feature_family": "utility",
+                "map_scope": "global",
+                "region_dependency": False,
+                "region_semantic": None,
+            },
+        ]
+    ).to_parquet(contract_dir / "feature_contract.parquet", index=False)
+    candidate_dir = tmp_path / "data" / "gold" / "modeling" / "t_side_ab_candidate"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"feature_name": ["players_mid_control_0_15"]}).to_parquet(candidate_dir / "candidate_model_feature_set.parquet", index=False)

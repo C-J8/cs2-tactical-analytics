@@ -1,0 +1,216 @@
+map_id: inferno
+display_name: Inferno
+game_map_name: de_inferno
+region_schema_version: v1
+boundary_policy: existing_behavior
+coordinate_system:
+  source: pending_parser_area_inventory
+  axis_x: x
+  axis_y: y
+  axis_z: z
+  place_column_candidates:
+  - last_place_name
+  - place_name
+  - player_last_place_name
+  - place
+  notes: No Inferno Awpy/nav area inventory is present locally yet. Regions are named-area placeholders marked unresolved; do not use for production feature generation until parser area names are confirmed.
+physical_regions:
+- region_id: inferno_mid_control_unresolved
+  display_name: Inferno Mid Control Unresolved
+  geometry:
+    type: named_area
+    source: pending_parser_area_inventory
+    area_names: []
+    notes: Parser/nav area names for Inferno mid-control have not been observed in local parsed data.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 90
+  boundary_policy: existing_behavior
+  aliases: []
+  status: unresolved
+  notes: Resolve with actual parser place names before feature execution is considered ready.
+- region_id: inferno_a_pressure_unresolved
+  display_name: Inferno A Pressure Unresolved
+  geometry:
+    type: named_area
+    source: pending_parser_area_inventory
+    area_names: []
+    notes: Parser/nav area names for Inferno A pressure have not been observed in local parsed data.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 89
+  boundary_policy: existing_behavior
+  aliases: []
+  status: unresolved
+  notes: Resolve with actual parser place names before feature execution is considered ready.
+- region_id: inferno_b_pressure_unresolved
+  display_name: Inferno B Pressure Unresolved
+  geometry:
+    type: named_area
+    source: pending_parser_area_inventory
+    area_names: []
+    notes: Parser/nav area names for Inferno B pressure have not been observed in local parsed data.
+  semantic_tags:
+  - b_pressure
+  site_affinity:
+  - B
+  region_scope: map_specific
+  priority: 88
+  boundary_policy: existing_behavior
+  aliases: []
+  status: unresolved
+  notes: Resolve with actual parser place names before feature execution is considered ready.
+- region_id: inferno_ct_space_unresolved
+  display_name: Inferno CT Space Unresolved
+  geometry:
+    type: named_area
+    source: pending_parser_area_inventory
+    area_names: []
+    notes: Parser/nav area names for Inferno CT/rotation defensive space have not been observed in local parsed data.
+  semantic_tags:
+  - ct_space
+  site_affinity: []
+  region_scope: map_specific
+  priority: 87
+  boundary_policy: existing_behavior
+  aliases: []
+  status: unresolved
+  notes: Resolve with actual parser place names before feature execution is considered ready.
+- region_id: inferno_rotation_unresolved
+  display_name: Inferno Rotation Unresolved
+  geometry:
+    type: named_area
+    source: pending_parser_area_inventory
+    area_names: []
+    notes: Parser/nav area names for Inferno rotation space have not been observed in local parsed data.
+  semantic_tags:
+  - rotation
+  site_affinity: []
+  region_scope: map_specific
+  priority: 86
+  boundary_policy: existing_behavior
+  aliases: []
+  status: unresolved
+  notes: Resolve with actual parser place names before feature execution is considered ready.
+- region_id: inferno_site_a_unresolved
+  display_name: Inferno Site A Unresolved
+  geometry:
+    type: named_area
+    source: pending_parser_area_inventory
+    area_names: []
+    notes: Parser/nav area names for Inferno bombsite A have not been observed in local parsed data.
+  semantic_tags:
+  - site_a
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 85
+  boundary_policy: existing_behavior
+  aliases: []
+  status: unresolved
+  notes: Resolve with actual parser place names before feature execution is considered ready.
+- region_id: inferno_site_b_unresolved
+  display_name: Inferno Site B Unresolved
+  geometry:
+    type: named_area
+    source: pending_parser_area_inventory
+    area_names: []
+    notes: Parser/nav area names for Inferno bombsite B have not been observed in local parsed data.
+  semantic_tags:
+  - site_b
+  site_affinity:
+  - B
+  region_scope: map_specific
+  priority: 84
+  boundary_policy: existing_behavior
+  aliases: []
+  status: unresolved
+  notes: Resolve with actual parser place names before feature execution is considered ready.
+- region_id: inferno_t_spawn_unresolved
+  display_name: Inferno T Spawn Unresolved
+  geometry:
+    type: named_area
+    source: pending_parser_area_inventory
+    area_names: []
+    notes: Parser/nav area names for Inferno T start space have not been observed in local parsed data.
+  semantic_tags:
+  - t_spawn_area
+  site_affinity: []
+  region_scope: map_specific
+  priority: 83
+  boundary_policy: existing_behavior
+  aliases: []
+  status: unresolved
+  notes: Resolve with actual parser place names before feature execution is considered ready.
+semantic_groups:
+  mid_control:
+    description: Map-dependent central tactical space for Inferno, unresolved until actual parser place names are available.
+    member_regions:
+    - inferno_mid_control_unresolved
+    status: unresolved
+    notes: Pending Inferno area inventory from parser/nav data.
+  a_pressure:
+    description: Map-dependent attacking pressure toward bombsite A for Inferno, unresolved until actual parser place names are available.
+    member_regions:
+    - inferno_a_pressure_unresolved
+    status: unresolved
+    notes: Pending Inferno area inventory from parser/nav data.
+  b_pressure:
+    description: Map-dependent attacking pressure toward bombsite B for Inferno, unresolved until actual parser place names are available.
+    member_regions:
+    - inferno_b_pressure_unresolved
+    status: unresolved
+    notes: Pending Inferno area inventory from parser/nav data.
+  ct_space:
+    description: Defensive/CT-side space for Inferno, unresolved until actual parser place names are available.
+    member_regions:
+    - inferno_ct_space_unresolved
+    status: unresolved
+    notes: Pending Inferno area inventory from parser/nav data.
+  rotation:
+    description: Rotation space for Inferno, unresolved until actual parser place names are available.
+    member_regions:
+    - inferno_rotation_unresolved
+    status: unresolved
+    notes: Pending Inferno area inventory from parser/nav data.
+  site_a:
+    description: Inferno bombsite A, unresolved until parser/nav area names are available.
+    member_regions:
+    - inferno_site_a_unresolved
+    status: unresolved
+    notes: Pending Inferno area inventory from parser/nav data.
+  site_b:
+    description: Inferno bombsite B, unresolved until parser/nav area names are available.
+    member_regions:
+    - inferno_site_b_unresolved
+    status: unresolved
+    notes: Pending Inferno area inventory from parser/nav data.
+  t_spawn_area:
+    description: Inferno T-side start space, unresolved until parser/nav area names are available.
+    member_regions:
+    - inferno_t_spawn_unresolved
+    status: unresolved
+    notes: Pending Inferno area inventory from parser/nav data.
+aliases:
+  inferno_mid_control_unresolved: []
+  inferno_a_pressure_unresolved: []
+  inferno_b_pressure_unresolved: []
+  inferno_ct_space_unresolved: []
+  inferno_rotation_unresolved: []
+  inferno_site_a_unresolved: []
+  inferno_site_b_unresolved: []
+  inferno_t_spawn_unresolved: []
+bombsites:
+  A:
+    region_ids:
+    - inferno_site_a_unresolved
+    notes: Structural bombsite A placeholder; parser place names must still be confirmed.
+  B:
+    region_ids:
+    - inferno_site_b_unresolved
+    notes: Structural bombsite B placeholder; parser place names must still be confirmed.

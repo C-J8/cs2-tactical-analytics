@@ -111,6 +111,7 @@ def build_utility_events(
     windows: list[FeatureWindow] | None = None,
     window_end: int | None = None,
     region_lookup: dict,
+    utility_region_groups: dict[str, str] | None = None,
     tickrate: float = 64.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
     windows = windows or configured_feature_windows(FeatureWindowsConfig())
@@ -126,7 +127,7 @@ def build_utility_events(
         table_events = events_from_table(source, round_base, utility_type=utility_type, source_table=table_name, region_lookup=region_lookup, tickrate=tickrate, windows=windows)
         events.append(table_events)
     utility_events = pd.concat(events, ignore_index=True) if events else empty_utility_events()
-    aggregates = build_utility_event_aggregates(utility_events, round_base, windows)
+    aggregates = build_utility_event_aggregates(utility_events, round_base, windows, utility_region_groups=utility_region_groups)
     return utility_events, aggregates, diagnostics
 
 
@@ -246,9 +247,16 @@ def detect_grenades_granularity(path: Path) -> str:
     return "trajectory_level" if ticks_per_entity.mean() > 1 else "event_level"
 
 
-def build_utility_event_aggregates(utility_events: pd.DataFrame, round_base: pd.DataFrame, windows: list[FeatureWindow]) -> pd.DataFrame:
+def build_utility_event_aggregates(
+    utility_events: pd.DataFrame,
+    round_base: pd.DataFrame,
+    windows: list[FeatureWindow],
+    *,
+    utility_region_groups: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    utility_region_groups = utility_region_groups or {"MID_CONTROL": "mid_control", "A_PRESSURE": "a_pressure", "B_PRESSURE": "b_pressure"}
     result = round_base[["round_feature_id"]].copy()
-    defaults = utility_aggregate_defaults(windows)
+    defaults = utility_aggregate_defaults(windows, utility_region_groups=utility_region_groups)
     defaults.update(
         {
             "smokes_used_0_20": 0,
@@ -279,9 +287,9 @@ def build_utility_event_aggregates(utility_events: pd.DataFrame, round_base: pd.
         row = {"round_feature_id": round_feature_id, **defaults}
         for feature_window in windows:
             window_events = events[(events["seconds_from_freeze_end"] >= feature_window.start) & (events["seconds_from_freeze_end"] < feature_window.end)]
-            add_utility_counts(row, window_events, feature_window.suffix)
+            add_utility_counts(row, window_events, feature_window.suffix, utility_region_groups=utility_region_groups)
         legacy_events = events[(events["seconds_from_freeze_end"] >= 0) & (events["seconds_from_freeze_end"] < 20)]
-        add_utility_counts(row, legacy_events, "0_20")
+        add_utility_counts(row, legacy_events, "0_20", utility_region_groups=utility_region_groups)
         smokes = events[events["utility_type"] == "smoke"]
         molotovs = events[events["utility_type"] == "molotov"]
         row["first_smoke_time"] = smokes["seconds_from_freeze_end"].min() if not smokes.empty else None
@@ -297,7 +305,8 @@ def build_utility_event_aggregates(utility_events: pd.DataFrame, round_base: pd.
     return merged
 
 
-def utility_aggregate_defaults(windows: list[FeatureWindow]) -> dict[str, object]:
+def utility_aggregate_defaults(windows: list[FeatureWindow], *, utility_region_groups: dict[str, str] | None = None) -> dict[str, object]:
+    utility_region_groups = utility_region_groups or {"MID_CONTROL": "mid_control", "A_PRESSURE": "a_pressure", "B_PRESSURE": "b_pressure"}
     defaults: dict[str, object] = {}
     for feature_window in windows:
         suffix = feature_window.suffix
@@ -306,19 +315,26 @@ def utility_aggregate_defaults(windows: list[FeatureWindow]) -> dict[str, object
         defaults[f"flashes_used_{suffix}"] = None
         defaults[f"he_used_{suffix}"] = None
         defaults[f"total_utility_used_{suffix}"] = 0
-        for region_suffix in ["mid_control", "a_pressure", "b_pressure"]:
+        for region_suffix in utility_region_groups.values():
             defaults[f"smokes_to_{region_suffix}_{suffix}"] = 0
             defaults[f"molotovs_to_{region_suffix}_{suffix}"] = 0
     return defaults
 
 
-def add_utility_counts(row: dict[str, object], events: pd.DataFrame, suffix: str) -> None:
+def add_utility_counts(
+    row: dict[str, object],
+    events: pd.DataFrame,
+    suffix: str,
+    *,
+    utility_region_groups: dict[str, str] | None = None,
+) -> None:
+    utility_region_groups = utility_region_groups or {"MID_CONTROL": "mid_control", "A_PRESSURE": "a_pressure", "B_PRESSURE": "b_pressure"}
     smokes = events[events["utility_type"] == "smoke"]
     molotovs = events[events["utility_type"] == "molotov"]
     row[f"smokes_used_{suffix}"] = len(smokes)
     row[f"molotovs_used_{suffix}"] = len(molotovs)
     row[f"total_utility_used_{suffix}"] = len(events)
-    for group, region_suffix in [("MID_CONTROL", "mid_control"), ("A_PRESSURE", "a_pressure"), ("B_PRESSURE", "b_pressure")]:
+    for group, region_suffix in utility_region_groups.items():
         row[f"smokes_to_{region_suffix}_{suffix}"] = int((smokes["end_region_group"] == group).sum())
         row[f"molotovs_to_{region_suffix}_{suffix}"] = int((molotovs["end_region_group"] == group).sum())
 

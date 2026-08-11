@@ -1,0 +1,469 @@
+map_id: mirage
+display_name: Mirage
+game_map_name: de_mirage
+region_schema_version: v1
+boundary_policy: existing_behavior
+coordinate_system:
+  source: existing_project_geometry
+  axis_x: x
+  axis_y: y
+  axis_z: z
+  notes: Current pipeline uses Awpy/place-name region aliases rather than custom coordinate
+    boxes.
+physical_regions:
+- region_id: t_spawn
+  display_name: T Spawn
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: T_SPAWN_AREA
+    source_place_aliases:
+    - T Spawn
+    - TSpawn
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - t_spawn_area
+  site_affinity: []
+  region_scope: map_specific
+  priority: 99
+  boundary_policy: existing_behavior
+  aliases:
+  - T Spawn
+  - TSpawn
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: mid
+  display_name: Mid
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: MID_CONTROL
+    source_place_aliases:
+    - Mid
+    - Middle
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 98
+  boundary_policy: existing_behavior
+  aliases:
+  - Mid
+  - Middle
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: top_mid
+  display_name: Top Mid
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: MID_CONTROL
+    source_place_aliases:
+    - Top Mid
+    - TopofMid
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 97
+  boundary_policy: existing_behavior
+  aliases:
+  - Top Mid
+  - TopofMid
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: connector
+  display_name: Connector
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: MID_CONTROL
+    source_place_aliases:
+    - Connector
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 96
+  boundary_policy: existing_behavior
+  aliases:
+  - Connector
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: window
+  display_name: Window
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: MID_CONTROL
+    source_place_aliases:
+    - Window
+    - SnipersNest
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 95
+  boundary_policy: existing_behavior
+  aliases:
+  - SnipersNest
+  - Window
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: catwalk
+  display_name: Catwalk
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: MID_CONTROL
+    source_place_aliases:
+    - Catwalk
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 94
+  boundary_policy: existing_behavior
+  aliases:
+  - Catwalk
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: a_ramp
+  display_name: A Ramp
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: A_PRESSURE
+    source_place_aliases:
+    - A Ramp
+    - TRamp
+    - Ramp
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 93
+  boundary_policy: existing_behavior
+  aliases:
+  - A Ramp
+  - Ramp
+  - TRamp
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: palace
+  display_name: Palace
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: A_PRESSURE
+    source_place_aliases:
+    - Palace
+    - PalaceInterior
+    - PalaceAlley
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 92
+  boundary_policy: existing_behavior
+  aliases:
+  - Palace
+  - PalaceAlley
+  - PalaceInterior
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: a_site
+  display_name: A Site
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: BOMB_SITE_A
+    source_place_aliases:
+    - A Site
+    - BombsiteA
+    - Stairs
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - site_a
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 91
+  boundary_policy: existing_behavior
+  aliases:
+  - A Site
+  - BombsiteA
+  - Stairs
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: b_apps
+  display_name: B Apps
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: B_PRESSURE
+    source_place_aliases:
+    - B Apps
+    - Apartments
+    - House
+    - BackAlley
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - b_pressure
+  site_affinity:
+  - B
+  region_scope: map_specific
+  priority: 90
+  boundary_policy: existing_behavior
+  aliases:
+  - Apartments
+  - B Apps
+  - BackAlley
+  - House
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: b_short
+  display_name: B Short
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: B_PRESSURE
+    source_place_aliases:
+    - B Short
+    - Ladder
+    - Scaffolding
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - b_pressure
+  site_affinity:
+  - B
+  region_scope: map_specific
+  priority: 89
+  boundary_policy: existing_behavior
+  aliases:
+  - B Short
+  - Ladder
+  - Scaffolding
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: b_site
+  display_name: B Site
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: BOMB_SITE_B
+    source_place_aliases:
+    - B Site
+    - BombsiteB
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - site_b
+  site_affinity:
+  - B
+  region_scope: map_specific
+  priority: 88
+  boundary_policy: existing_behavior
+  aliases:
+  - B Site
+  - BombsiteB
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: market
+  display_name: Market
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: CT_SPACE
+    source_place_aliases:
+    - Market
+    - Shop
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - ct_space
+  site_affinity: []
+  region_scope: map_specific
+  priority: 87
+  boundary_policy: existing_behavior
+  aliases:
+  - Market
+  - Shop
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: ct_spawn
+  display_name: CT Spawn
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: CT_SPACE
+    source_place_aliases:
+    - CT Spawn
+    - CTSpawn
+    - TicketBooth
+    - Truck
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - ct_space
+  site_affinity: []
+  region_scope: map_specific
+  priority: 86
+  boundary_policy: existing_behavior
+  aliases:
+  - CT Spawn
+  - CTSpawn
+  - TicketBooth
+  - Truck
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: jungle
+  display_name: Jungle
+  geometry:
+    type: named_area
+    source: migrated_from_current_pipeline
+    source_region_group: ROTATION_AREA
+    source_place_aliases:
+    - Jungle
+    - SideAlley
+    - Underpass
+    notes: Awpy/place-name area migrated without coordinate boundary changes.
+  semantic_tags:
+  - rotation
+  site_affinity: []
+  region_scope: map_specific
+  priority: 85
+  boundary_policy: existing_behavior
+  aliases:
+  - Jungle
+  - SideAlley
+  - Underpass
+  status: active
+  notes: Migrated from configs/maps/mirage_regions.yaml.
+semantic_groups:
+  a_pressure:
+    description: Regions representing meaningful attacking pressure toward bombsite
+      A.
+    member_regions:
+    - a_ramp
+    - palace
+    status: active
+    notes: Migrated from current place-name region mapping.
+  b_pressure:
+    description: Regions representing meaningful attacking pressure toward bombsite
+      B.
+    member_regions:
+    - b_apps
+    - b_short
+    status: active
+    notes: Migrated from current place-name region mapping.
+  ct_space:
+    description: Defensive or CT-side space used by current region mapping.
+    member_regions:
+    - market
+    - ct_spawn
+    status: active
+    notes: Migrated from current place-name region mapping.
+  mid_control:
+    description: Map-dependent areas representing meaningful control of central tactical
+      space.
+    member_regions:
+    - mid
+    - top_mid
+    - connector
+    - window
+    - catwalk
+    status: active
+    notes: Migrated from current place-name region mapping.
+  rotation:
+    description: Connector or rotation areas linking major tactical spaces.
+    member_regions:
+    - jungle
+    status: active
+    notes: Migrated from current place-name region mapping.
+  site_a:
+    description: Physical bombsite A regions.
+    member_regions:
+    - a_site
+    status: active
+    notes: Migrated from current place-name region mapping.
+  site_b:
+    description: Physical bombsite B regions.
+    member_regions:
+    - b_site
+    status: active
+    notes: Migrated from current place-name region mapping.
+  t_spawn_area:
+    description: Map-dependent areas representing the T-side spawn/start space.
+    member_regions:
+    - t_spawn
+    status: active
+    notes: Migrated from current place-name region mapping.
+aliases:
+  t_spawn:
+  - T Spawn
+  - TSpawn
+  mid:
+  - Mid
+  - Middle
+  top_mid:
+  - Top Mid
+  - TopofMid
+  connector:
+  - Connector
+  window:
+  - SnipersNest
+  - Window
+  catwalk:
+  - Catwalk
+  a_ramp:
+  - A Ramp
+  - Ramp
+  - TRamp
+  palace:
+  - Palace
+  - PalaceAlley
+  - PalaceInterior
+  a_site:
+  - A Site
+  - BombsiteA
+  - Stairs
+  b_apps:
+  - Apartments
+  - B Apps
+  - BackAlley
+  - House
+  b_short:
+  - B Short
+  - Ladder
+  - Scaffolding
+  b_site:
+  - B Site
+  - BombsiteB
+  market:
+  - Market
+  - Shop
+  ct_spawn:
+  - CT Spawn
+  - CTSpawn
+  - TicketBooth
+  - Truck
+  jungle:
+  - Jungle
+  - SideAlley
+  - Underpass
+bombsites:
+  A:
+    region_ids:
+    - a_site
+    notes: Bombsite A migrated from BOMB_SITE_A region group.
+  B:
+    region_ids:
+    - b_site
+    notes: Bombsite B migrated from BOMB_SITE_B region group.

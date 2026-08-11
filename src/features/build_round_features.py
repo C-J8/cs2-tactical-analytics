@@ -8,10 +8,20 @@ import pandas as pd
 from src.config.schemas import load_project_config
 from src.features.feature_audit import build_feature_audit
 from src.features.feature_windows import configured_feature_windows
+from src.features.map_refactor_audit import (
+    build_map_refactor_audits,
+    build_post_refactor_frames,
+    elapsed_seconds,
+    load_candidate_feature_set,
+    load_compatibility_baselines,
+    load_feature_contract,
+    measure_start,
+)
 from src.features.position_features import build_position_outputs, load_early_ticks
-from src.features.region_mapping import build_place_lookup, choose_place_column, load_region_config
+from src.features.region_mapping import choose_place_column, load_region_mapping_from_registry
 from src.features.round_context import build_round_base
 from src.features.utility_features import build_player_round_utility, build_utility_events
+from src.maps.semantic import legacy_feature_groups_for_registry
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 
@@ -87,15 +97,26 @@ def run_feature_pipeline(
     window_end: int | None = None,
     target_map: str | None = None,
     target_team: str | None = None,
+    map_registry_path: Path = Path("configs/maps/map_registry.yaml"),
+    feature_contract_path: Path | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Path], dict[str, int]]:
+    started_at = measure_start()
     project = load_project_config(config_path)
     target_map = target_map or project.target_maps[0]
     target_team = target_team or project.target_teams[0]
     silver_dir = project.parsed_silver_dir
+    gold_dir = silver_dir.parent.parent / "gold"
     warnings: list[str] = []
     feature_windows = configured_feature_windows(project.feature_windows)
     if window_end is not None:
         warnings.append("--window-end is deprecated; using feature_windows from configs/project.yaml.")
+
+    registry, region_lookup, region_config = load_region_mapping_from_registry(target_map, registry_path=map_registry_path)
+    feature_contract = load_feature_contract(gold_dir, feature_contract_path)
+    candidate_feature_set = load_candidate_feature_set(gold_dir)
+    baselines = load_compatibility_baselines(gold_dir)
+    region_feature_groups = legacy_feature_groups_for_registry(registry, ["mid_control", "a_pressure", "b_pressure", "ct_space"])
+    utility_region_groups = legacy_feature_groups_for_registry(registry, ["mid_control", "a_pressure", "b_pressure"])
 
     feature_eligible = read_catalog(silver_dir / "feature_eligible_demos.parquet")
     feature_eligible = feature_eligible[
@@ -110,19 +131,42 @@ def run_feature_pipeline(
     bomb = pd.read_parquet(silver_dir / "bomb.parquet") if (silver_dir / "bomb.parquet").exists() else pd.DataFrame()
     round_base = build_round_base(rounds, feature_eligible, bomb)
 
-    region_config = load_region_config(Path("configs/maps/mirage_regions.yaml"))
-    region_lookup = build_place_lookup(region_config)
     early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), round_base, windows=feature_windows)
     place_column = choose_place_column(list(early_ticks.columns), region_config)
     if place_column is None:
         warnings.append("No place-name column found in ticks; region mapping fell back to UNKNOWN.")
 
-    region_presence, position_wide = build_position_outputs(early_ticks, round_base, region_lookup=region_lookup, place_column=place_column, windows=feature_windows)
+    region_presence, position_wide = build_position_outputs(
+        early_ticks,
+        round_base,
+        region_lookup=region_lookup,
+        place_column=place_column,
+        region_feature_groups=region_feature_groups,
+        windows=feature_windows,
+    )
     player_utility, utility_start_wide = build_player_round_utility(early_ticks, round_base)
-    utility_events, utility_events_wide, diagnostics = build_utility_events(silver_dir, round_base, windows=feature_windows, region_lookup=region_lookup)
+    utility_events, utility_events_wide, diagnostics = build_utility_events(
+        silver_dir,
+        round_base,
+        windows=feature_windows,
+        region_lookup=region_lookup,
+        utility_region_groups=utility_region_groups,
+    )
     diagnostics["feature_windows_interval"] = ",".join(f"{window.start}-{window.end}" for window in feature_windows if window.window_type == "interval")
     diagnostics["feature_windows_cumulative"] = ",".join(f"{window.start}-{window.end}" for window in feature_windows if window.window_type == "cumulative")
+    diagnostics["map_registry_version"] = registry.registry_version
+    diagnostics["map_registry_id"] = registry.map_id
     round_features = assemble_round_features(round_base, position_wide, utility_start_wide, utility_events_wide)
+    new_runtime_seconds = elapsed_seconds(started_at)
+    post_frames = build_post_refactor_frames(round_features=round_features, region_presence=region_presence, baselines=baselines)
+    map_refactor_audits = build_map_refactor_audits(
+        registry=registry,
+        feature_contract=feature_contract,
+        candidate_feature_set=candidate_feature_set,
+        baselines=baselines,
+        post_frames=post_frames,
+        new_runtime_seconds=new_runtime_seconds,
+    )
     feature_audit = build_feature_audit(
         feature_eligible=feature_eligible,
         round_features=round_features,
@@ -134,12 +178,13 @@ def run_feature_pipeline(
 
     outputs: dict[str, Path] = {}
     if not dry_run:
-        outputs.update(write_outputs(round_features, round_base, player_utility, utility_events, region_presence, feature_audit, force=force))
+        outputs.update(write_outputs(round_features, round_base, player_utility, utility_events, region_presence, feature_audit, map_refactor_audits, force=force))
     summary = {
         "demos_used": len(feature_eligible),
         "rounds_generated": len(round_features),
         "utility_events": len(utility_events),
         "region_presence_rows": len(region_presence),
+        "map_refactor_unknowns": len(map_refactor_audits["map_feature_unknowns"]),
         "warnings": len(warnings),
     }
     return round_features, outputs, summary
@@ -166,6 +211,7 @@ def write_outputs(
     utility_events: pd.DataFrame,
     region_presence: pd.DataFrame,
     feature_audit: pd.DataFrame,
+    map_refactor_audits: dict[str, pd.DataFrame],
     *,
     force: bool,
 ) -> dict[str, Path]:
@@ -180,6 +226,8 @@ def write_outputs(
     outputs.update(write_frame(utility_events, utility_dir / "utility_events", csv=False, parquet=True, force=force))
     outputs.update(write_frame(region_presence, region_dir / "region_presence_by_round", csv=False, parquet=True, force=force))
     outputs.update(write_frame(feature_audit, audit_dir / "feature_audit", csv=True, parquet=True, force=force))
+    for name, frame in map_refactor_audits.items():
+        outputs.update(write_frame(frame, audit_dir / name, csv=True, parquet=True, force=force))
     return outputs
 
 
@@ -215,6 +263,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--window-end", type=int, default=None, help="Deprecated; feature windows are read from configs/project.yaml.")
     parser.add_argument("--target-map", default=None)
     parser.add_argument("--target-team", default=None)
+    parser.add_argument("--map-registry", type=Path, default=Path("configs/maps/map_registry.yaml"))
+    parser.add_argument("--feature-contract", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -229,6 +279,8 @@ def main() -> None:
         window_end=args.window_end,
         target_map=args.target_map,
         target_team=args.target_team,
+        map_registry_path=args.map_registry,
+        feature_contract_path=args.feature_contract,
     )
     print_summary(outputs, summary)
 
