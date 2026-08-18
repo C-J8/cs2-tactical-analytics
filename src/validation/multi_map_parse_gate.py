@@ -11,6 +11,7 @@ import polars as pl
 
 from src.config.schemas import load_project_config
 from src.maps.identity import resolve_map_identity, same_map, try_resolve_map_identity
+from src.maps.place_columns import PLACE_COLUMN_CANDIDATES, detect_place_column
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 
@@ -27,7 +28,7 @@ OUTPUT_NAMES = [
     "multi_map_parse_audit",
 ]
 SILVER_TABLES = ["rounds", "ticks", "kills", "damages", "shots", "bomb", "smokes", "infernos", "grenades", "footsteps"]
-PLACE_COLUMNS = ["last_place_name", "place_name", "player_last_place_name", "place"]
+PLACE_COLUMNS = PLACE_COLUMN_CANDIDATES
 
 
 def run_multi_map_parse_gate(
@@ -395,13 +396,6 @@ def filter_scope(
     if map_column in result.columns:
         result = result[result[map_column].map(lambda value: same_map(value, target_map, registry_path=registry_path))]
     return result.copy()
-
-
-def detect_place_column(frame: pd.DataFrame) -> str | None:
-    for column in PLACE_COLUMNS:
-        if column in frame.columns:
-            return column
-    return None
 
 
 def load_silver_tables(silver_dir: Path, *, selected_parse_ids: set[str], preservation_parse_ids: set[str]) -> dict[str, pd.DataFrame]:

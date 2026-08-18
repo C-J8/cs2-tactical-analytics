@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.5 -- Canonical Map Identity & Safe Multi-Map Parsing**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.6 -- Generic Map Area Discovery**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, and a safe multi-map parse gate. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, and generic area discovery from real parser `place` + X/Y/Z evidence. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -36,7 +36,8 @@ Validated local snapshot for Vitality on Mirage:
 - 1 Stage 8.3 Mirage regression gate with 16 datasets and 14 critical invariants passing;
 - 1 Stage 8.4 Inferno onboarding package registering 5 local Inferno demos for Vitality;
 - 1 Stage 8.5 multi-map parsing gate showing 5 parsed Inferno demos, 5 feature-eligible Inferno demos, Mirage preservation, and `ready_for_area_discovery = true`;
-- 195 tests passing and `ruff check .` passing.
+- 1 Stage 8.6 area discovery package with 23 Mirage places, 24 Inferno places, real coordinate/coverage/stability profiles, Mirage crosswalk coverage of 100% of observed ticks, and Inferno `ready_for_region_mapping = true`;
+- 209 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -68,6 +69,8 @@ python -m src.maps.onboard_map --config configs/project.yaml --map Inferno --tar
 python -m src.parsing.parse_demos --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.parsing.parse_quality --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.validation.multi_map_parse_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+python -m src.maps.discover_map_areas --config configs/project.yaml --map Mirage --target-team Vitality --force
+python -m src.maps.discover_map_areas --config configs/project.yaml --map Inferno --target-team Vitality --force
 ```
 
 Important dependency rules:
@@ -89,6 +92,7 @@ Important dependency rules:
 - Stage 8.3 compares the current Mirage MVP against an explicit frozen baseline and blocks new-map onboarding on any critical regression.
 - Stage 8.4 registers Inferno and writes onboarding/readiness audits under `data/gold/maps/inferno/onboarding/`; it does not train models, scrape HLTV, or overwrite Mirage feature outputs.
 - Stage 8.5 resolves map names through canonical identity, parses explicit map/team scopes safely, preserves other maps during forced upserts, and validates readiness for future area discovery. It does not discover Inferno areas, edit Inferno semantic mappings, run Inferno feature engineering, train models, or build dashboards.
+- Stage 8.6 discovers raw parser places and coordinate evidence for parsed maps. It does not update Mirage or Inferno registry YAML files, infer tactical semantic groups, run feature engineering, train models, or alter Stage 6 outputs.
 
 ## MVP Scope
 
@@ -1638,7 +1642,72 @@ Current Stage 8.5 snapshot:
 | critical_failures | 0 |
 | Gate status | ok |
 
-Stage 8.5 deliberately does not discover Inferno areas, edit `configs/maps/inferno.yaml` semantic mappings, run Inferno feature engineering, train models, build dashboards, or use BigQuery. The next stage should use the real Inferno `place` names from parsed data to build a verified area/semantic mapping.
+Stage 8.5 deliberately does not discover Inferno areas, edit `configs/maps/inferno.yaml` semantic mappings, run Inferno feature engineering, train models, build dashboards, or use BigQuery.
+
+## Stage 8.6 -- Generic Map Area Discovery
+
+Stage 8.6 discovers real parser-reported places for any parsed canonical map scope. It reads scoped rows from `data/silver/parsed_demos/ticks.parquet`, using `source_parse_id` from the parse manifest and canonical map identity instead of textual map equality.
+
+Run Mirage as the reference map:
+
+```bash
+python -m src.maps.discover_map_areas --config configs/project.yaml --map Mirage --target-team Vitality --force
+```
+
+Run Inferno as the first new discovered map:
+
+```bash
+python -m src.maps.discover_map_areas --config configs/project.yaml --map Inferno --target-team Vitality --force
+```
+
+The stage writes consolidated CSV and Parquet outputs under:
+
+```text
+data/gold/maps/area_discovery/
+```
+
+Main outputs:
+
+- `map_area_discovery_summary`;
+- `map_place_inventory`;
+- `map_place_coordinates`;
+- `map_place_by_demo`;
+- `map_place_coverage`;
+- `map_place_name_stability`;
+- `map_place_vertical_profile`;
+- `map_place_coordinate_sample`;
+- `map_area_discovery_unknowns`;
+- `mirage_place_registry_crosswalk`;
+- `mirage_area_discovery_validation`;
+- `inferno_place_discovery`;
+- `map_area_discovery_audit`.
+
+Documentation and notebook:
+
+```text
+docs/map_area_discovery.md
+notebooks/20_map_area_discovery.ipynb
+```
+
+Current Stage 8.6 snapshot:
+
+| Metric | Mirage | Inferno |
+| --- | ---: | ---: |
+| Target team | Vitality | Vitality |
+| Source demos | 19 | 5 |
+| Source rounds | 410 | 122 |
+| Source ticks | 30206610 | 10081430 |
+| Place column | place | place |
+| Place non-null share | 100% | 100% |
+| Unique raw places | 23 | 24 |
+| Ready for region mapping | true | true |
+| Status | ok | ok |
+
+Mirage is used as a validation reference. The current Mirage registry explains 100% of observed Mirage tick places in this local sample, with 23 matched observed places and no unmatched observed places.
+
+Inferno now has real raw-place, coordinate, coverage, stability, vertical-profile, and sample outputs. The Inferno registry remains intentionally unresolved in `configs/maps/inferno.yaml`; this stage does not write callouts, bounding boxes, aliases, or semantic groups into that file.
+
+Important limitation: Stage 8.6 does not decide that raw places such as `Banana`, `BombsiteA`, `Middle`, or `Apartments` belong to tactical groups like `b_pressure`, `site_a`, or `mid_control`. That physical-to-semantic mapping is reserved for Stage 8.7.
 
 Validation commands:
 
