@@ -11,7 +11,7 @@ import yaml
 
 from src.config.schemas import load_project_config
 from src.features.region_mapping import load_region_config
-from src.maps.registry import MapRegistry, load_map_registry, normalize_id, registry_from_config, validate_map_registry
+from src.maps.registry import MapRegistry, load_map_registry, load_yaml, normalize_id, registry_from_config, validate_map_registry
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 
@@ -64,6 +64,7 @@ def run_map_registry(
     project_root = config_path.resolve().parent.parent
     gold_dir = project.parsed_silver_dir.parent.parent / "gold"
     maps_dir = project_root / "configs" / "maps"
+    existing_registry_index = (maps_dir / "map_registry.yaml").exists()
     registry_index, map_config = build_configs_from_existing(maps_dir, map_name=map_name, registry_version=registry_version)
     registry = registry_from_config(map_config, registry_version=registry_version, source_path=maps_dir / f"{normalize_id(map_name)}.yaml")
     validate_map_registry(registry)
@@ -96,11 +97,15 @@ def run_map_registry(
             maps_dir / "map_registry.yaml",
             force=force,
         )
-        outputs["mirage_config"] = write_text(
-            yaml.safe_dump(map_config, sort_keys=False, allow_unicode=False),
-            maps_dir / "mirage.yaml",
-            force=force,
-        )
+        map_config_path = maps_dir / f"{registry.map_id}.yaml"
+        if existing_registry_index and map_config_path.exists():
+            outputs[f"{registry.map_id}_config"] = map_config_path
+        else:
+            outputs[f"{registry.map_id}_config"] = write_text(
+                yaml.safe_dump(map_config, sort_keys=False, allow_unicode=False),
+                map_config_path,
+                force=force,
+            )
         # Validate the on-disk loader path, not just the in-memory migration.
         load_map_registry(map_name, registry_path=maps_dir / "map_registry.yaml")
         output_dir = gold_dir / "maps" / "map_registry"
@@ -129,6 +134,23 @@ def run_map_registry(
 
 
 def build_configs_from_existing(maps_dir: Path, *, map_name: str, registry_version: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    existing_index_path = maps_dir / "map_registry.yaml"
+    if existing_index_path.exists():
+        registry_index = load_yaml(existing_index_path)
+        registry_index["registry_version"] = registry_version
+        requested = normalize_id(map_name)
+        requested_without_prefix = requested.removeprefix("de_")
+        for entry in registry_index.get("maps", []):
+            entry_keys = {
+                normalize_id(str(entry.get("map_id") or "")),
+                normalize_id(str(entry.get("display_name") or "")),
+                normalize_id(str(entry.get("game_map_name") or "")).removeprefix("de_"),
+            }
+            if requested_without_prefix in entry_keys:
+                config_path = maps_dir.parent.parent / str(entry["config_path"])
+                return registry_index, load_yaml(config_path)
+        raise ValueError(f"Map {map_name!r} is not registered in {existing_index_path}.")
+
     source = load_region_config(maps_dir / "mirage_regions.yaml")
     if normalize_id(map_name) != "mirage":
         raise ValueError("Stage 8.1 only migrates the current reference map: Mirage.")

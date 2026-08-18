@@ -16,7 +16,8 @@ from src.config.schemas import load_project_config
 from src.features.build_round_features import run_feature_pipeline
 from src.features.round_state import run_round_state_pipeline
 from src.features.side_datasets import run_side_dataset_pipeline
-from src.maps.identity import canonical_map_id, same_map
+from src.maps.identity import canonical_map_id
+from src.maps.registry import normalize_id
 from src.parsing.parse_quality import run_quality_pipeline
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
@@ -79,6 +80,14 @@ CONFIG_SNAPSHOTS = [
     Path("configs/maps/map_registry.yaml"),
     Path("configs/maps/mirage.yaml"),
 ]
+FEATURE_CONTRACT_METADATA_COLUMNS = {
+    "feature_contract_version",
+    "generation_scope",
+    "coordinate_dependency",
+    "cross_map_comparable",
+    "cross_map_comparison_mode",
+    "cross_map_notes",
+}
 
 
 def run_mirage_regression_gate(
@@ -328,8 +337,14 @@ def filter_frame_scope(
         result = result[result["map_id"].astype(str).map(lambda value: value == target_map_id)].copy()
     map_column = next((column for column in ["map_name", "inferred_map_name", "target_map"] if column in result.columns), None)
     if map_column:
-        result = result[result[map_column].map(lambda value: same_map(value, target_map, registry_path=registry_path))].copy()
+        result = result[result[map_column].map(lambda value: map_matches(value, target_map, target_map_id))].copy()
     return result
+
+
+def map_matches(value: object, target_map: str, target_map_id: str) -> bool:
+    key = normalize_id(str(value or ""))
+    requested = normalize_id(target_map)
+    return key in {requested, target_map_id, f"de_{target_map_id}"} or key.removeprefix("de_") == target_map_id
 
 
 def build_schema_comparison(baseline: dict[str, pd.DataFrame], current: dict[str, pd.DataFrame], *, strict: bool) -> pd.DataFrame:
@@ -345,7 +360,12 @@ def build_schema_comparison(baseline: dict[str, pd.DataFrame], current: dict[str
             order_after = list(after.columns).index(column) if exists_after else None
             dtype_before = str(before[column].dtype) if exists_before else None
             dtype_after = str(after[column].dtype) if exists_after else None
-            ok = exists_before and exists_after and dtype_before == dtype_after and (not strict or order_before == order_after)
+            if spec.dataset_name == "feature_contract":
+                ok = feature_contract_schema_ok(column, exists_before, exists_after, dtype_before, dtype_after)
+                notes = "Feature Contract v2 additive metadata is allowed." if ok and not exists_before else "Feature Contract behavioral schema mismatch."
+            else:
+                ok = exists_before and exists_after and dtype_before == dtype_after and (not strict or order_before == order_after)
+                notes = "Schema exact match." if ok else "Column presence, dtype, or order differs."
             status = "ok" if ok else "failed"
             rows.append(
                 {
@@ -358,7 +378,7 @@ def build_schema_comparison(baseline: dict[str, pd.DataFrame], current: dict[str
                     "column_order_baseline": order_before,
                     "column_order_current": order_after,
                     "status": status,
-                    "notes": "Schema exact match." if ok else "Column presence, dtype, or order differs.",
+                    "notes": notes,
                 }
             )
     return pd.DataFrame(rows)
@@ -573,7 +593,12 @@ def build_dataset_comparison(
         schema_match = not (schema[(schema["dataset_name"] == spec.dataset_name) & (schema["status"] == "failed")].shape[0])
         identity_row = row_identity[row_identity["dataset_name"] == spec.dataset_name]
         row_match = bool(identity_row.iloc[0]["exact_key_match"]) if not identity_row.empty else False
-        value_match = value_status == "ok" if spec.dataset_name == "round_features_mvp" else content_hash(before, list(spec.key_columns)) == content_hash(after, list(spec.key_columns))
+        if spec.dataset_name == "round_features_mvp":
+            value_match = value_status == "ok"
+        elif spec.dataset_name == "feature_contract":
+            value_match = feature_contract_metadata_compatible(before, after)
+        else:
+            value_match = content_hash(before, list(spec.key_columns)) == content_hash(after, list(spec.key_columns))
         ok = schema_match and row_match and value_match
         rows.append(
             {
@@ -590,10 +615,45 @@ def build_dataset_comparison(
                 "row_identity_match": row_match,
                 "value_match": value_match,
                 "status": "ok" if ok else "failed",
-                "notes": "Dataset unchanged." if ok else "Dataset schema, row identity, or content changed.",
+                "notes": dataset_comparison_notes(spec.dataset_name, ok),
             }
         )
     return pd.DataFrame(rows)
+
+
+def feature_contract_schema_ok(
+    column: str,
+    exists_before: bool,
+    exists_after: bool,
+    dtype_before: str | None,
+    dtype_after: str | None,
+) -> bool:
+    if column in FEATURE_CONTRACT_METADATA_COLUMNS and exists_after:
+        return True
+    return bool(exists_before and exists_after and dtype_before == dtype_after)
+
+
+def feature_contract_metadata_compatible(before: pd.DataFrame, after: pd.DataFrame) -> bool:
+    if before.empty and after.empty:
+        return True
+    if before.empty or after.empty or "feature_name" not in before.columns or "feature_name" not in after.columns:
+        return False
+    before_aligned, after_aligned = align_on_keys(before, after, ["feature_name"])
+    if len(before_aligned) != len(before) or len(after_aligned) != len(after):
+        return False
+    behavioral_columns = sorted((set(before.columns) & set(after.columns)) - FEATURE_CONTRACT_METADATA_COLUMNS)
+    for column in behavioral_columns:
+        if column == "feature_name":
+            continue
+        if not ((before_aligned[column].map(cell_text) == after_aligned[column].map(cell_text)).all()):
+            return False
+    return True
+
+
+def dataset_comparison_notes(dataset_name: str, ok: bool) -> str:
+    if ok and dataset_name == "feature_contract":
+        return "Feature Contract behavioral fields unchanged; v2 additive metadata allowed."
+    return "Dataset unchanged." if ok else "Dataset schema, row identity, or content changed."
 
 
 def build_invariant_checks(

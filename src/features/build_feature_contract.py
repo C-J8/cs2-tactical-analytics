@@ -25,7 +25,7 @@ OUTPUT_NAMES = [
     "feature_contract_audit",
 ]
 
-DEFAULT_CONTRACT_VERSION = "v1"
+DEFAULT_CONTRACT_VERSION = "v2"
 DEFAULT_HORIZONS = [15, 25, 35, 45, 55, 65]
 ROUND_DATASETS = {
     "round_features_mvp": "round_features/round_features_mvp.parquet",
@@ -83,6 +83,18 @@ MIRAGE_SPECIFIC_TERMS = {
     "catwalk",
     "short",
     "ramp",
+}
+RAW_COORDINATE_TOKENS = {
+    "_x_",
+    "_y_",
+    "_z_",
+    "_x",
+    "_y",
+    "_z",
+    "center_x",
+    "center_y",
+    "center_z",
+    "coordinate",
 }
 
 
@@ -214,6 +226,13 @@ def build_contract(
         region_dependency, region_semantic = infer_region(feature_name, family)
         mirage_specific = is_mirage_specific(feature_name, family)
         map_scope = classify_map_scope(region_dependency, mirage_specific, feature_name)
+        coordinate_dependency = infer_coordinate_dependency(feature_name, region_dependency)
+        comparison = cross_map_comparison(
+            map_scope=map_scope,
+            coordinate_dependency=coordinate_dependency,
+            region_dependency=region_dependency,
+            region_semantic=region_semantic,
+        )
         lifecycle_phase = classify_lifecycle(feature_name, family, leakage_risk, window_end)
         minimum_horizon = minimum_prediction_horizon(window_end, lifecycle_phase, modeling_allowed)
         status = feature_status(modeling_allowed, dashboard_allowed, leakage_risk, map_scope, family)
@@ -233,8 +252,13 @@ def build_contract(
                 "window_end": window_end,
                 "window_type": window_type,
                 "map_scope": map_scope,
+                "generation_scope": map_scope,
                 "region_dependency": region_dependency,
                 "region_semantic": region_semantic,
+                "coordinate_dependency": coordinate_dependency,
+                "cross_map_comparable": comparison["cross_map_comparable"],
+                "cross_map_comparison_mode": comparison["cross_map_comparison_mode"],
+                "cross_map_notes": comparison["cross_map_notes"],
                 "mirage_specific": mirage_specific,
                 "modeling_allowed": modeling_allowed,
                 "dashboard_allowed": dashboard_allowed,
@@ -419,6 +443,56 @@ def classify_map_scope(region_dependency: bool, mirage_specific: bool, feature_n
     return "unknown"
 
 
+def infer_coordinate_dependency(feature_name: str, region_dependency: bool) -> str:
+    name = f"_{feature_name.casefold()}_"
+    raw_coordinate = any(token in name for token in RAW_COORDINATE_TOKENS)
+    if raw_coordinate and region_dependency:
+        return "mixed"
+    if raw_coordinate:
+        return "raw_map_coordinates"
+    if region_dependency:
+        return "region_semantic"
+    return "none"
+
+
+def cross_map_comparison(
+    *,
+    map_scope: str,
+    coordinate_dependency: str,
+    region_dependency: bool,
+    region_semantic: str | None,
+) -> dict[str, object]:
+    if map_scope == "map_specific":
+        return {
+            "cross_map_comparable": False,
+            "cross_map_comparison_mode": "map_specific_only",
+            "cross_map_notes": "Map-specific term requires a manual portability decision before cross-map comparison.",
+        }
+    if coordinate_dependency in {"raw_map_coordinates", "mixed"}:
+        return {
+            "cross_map_comparable": False,
+            "cross_map_comparison_mode": "normalized_required",
+            "cross_map_notes": "Raw map coordinates can be generated on multiple maps but are not directly comparable without normalization.",
+        }
+    if region_dependency and region_semantic and region_semantic != "unknown":
+        return {
+            "cross_map_comparable": True,
+            "cross_map_comparison_mode": "semantic",
+            "cross_map_notes": "Comparable through validated tactical semantic groups in each map registry.",
+        }
+    if map_scope == "global" and coordinate_dependency == "none":
+        return {
+            "cross_map_comparable": True,
+            "cross_map_comparison_mode": "direct",
+            "cross_map_notes": "No map geometry dependency detected; direct comparison is allowed.",
+        }
+    return {
+        "cross_map_comparable": False,
+        "cross_map_comparison_mode": "unknown",
+        "cross_map_notes": "Cross-map comparability is not yet known.",
+    }
+
+
 def classify_lifecycle(feature_name: str, family: str, leakage_risk: str, window_end: int | None) -> str:
     name = feature_name.casefold()
     if family in {"identity", "quality"}:
@@ -538,7 +612,7 @@ def notes_for_feature(
 
 def build_summary(contract: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for group_type in ["feature_family", "map_scope", "feature_status", "modeling_allowed", "dashboard_allowed"]:
+    for group_type in ["feature_family", "map_scope", "generation_scope", "coordinate_dependency", "cross_map_comparison_mode", "feature_status", "modeling_allowed", "dashboard_allowed"]:
         for group_value, group in contract.groupby(group_type, dropna=False):
             rows.append(summary_row(group_type, group_value, group))
     return pd.DataFrame(rows)
@@ -753,8 +827,13 @@ def build_config_yaml(contract: pd.DataFrame, contract_version: str) -> dict[str
         "window_end",
         "window_type",
         "map_scope",
+        "generation_scope",
         "region_dependency",
         "region_semantic",
+        "coordinate_dependency",
+        "cross_map_comparable",
+        "cross_map_comparison_mode",
+        "cross_map_notes",
         "modeling_allowed",
         "dashboard_allowed",
         "leakage_risk",
@@ -821,11 +900,14 @@ def build_markdown_report(frames: dict[str, pd.DataFrame]) -> str:
             "## Map portability",
             markdown_table(summary[summary["group_type"].eq("map_scope")], list(summary.columns)),
             "",
+            "## Cross-map comparability",
+            markdown_table(summary[summary["group_type"].eq("cross_map_comparison_mode")], list(summary.columns)),
+            "",
             "## Global features",
-            markdown_table(contract[contract["map_scope"].eq("global")], ["feature_name", "feature_family", "modeling_allowed", "dashboard_allowed"], top_n=25),
+            markdown_table(contract[contract["map_scope"].eq("global")], ["feature_name", "feature_family", "coordinate_dependency", "cross_map_comparison_mode", "modeling_allowed", "dashboard_allowed"], top_n=25),
             "",
             "## Map-abstract features",
-            markdown_table(contract[contract["map_scope"].eq("map_abstract")], ["feature_name", "region_semantic", "modeling_allowed", "requires_map_registry" if "requires_map_registry" in contract.columns else "notes"], top_n=25),
+            markdown_table(contract[contract["map_scope"].eq("map_abstract")], ["feature_name", "region_semantic", "cross_map_comparable", "cross_map_comparison_mode", "modeling_allowed", "notes"], top_n=25),
             "",
             "## Mirage-specific features",
             markdown_table(contract[contract["mirage_specific"]], ["feature_name", "region_semantic", "feature_status", "notes"], top_n=25),

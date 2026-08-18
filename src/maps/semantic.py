@@ -30,7 +30,13 @@ def legacy_region_group(region: PhysicalRegion) -> str:
 def place_lookup_from_registry(registry: MapRegistry) -> dict[str, tuple[str, str]]:
     lookup: dict[str, tuple[str, str]] = {}
     for region in registry.physical_regions.values():
-        aliases = [region.display_name, region.region_id, *region.aliases]
+        aliases = [
+            region.display_name,
+            region.region_id,
+            *region.aliases,
+            *list_values(region.geometry.get("area_names")),
+            *list_values(region.geometry.get("source_place_aliases")),
+        ]
         for alias in aliases:
             lookup[normalize_place(alias)] = (region.display_name, legacy_region_group(region))
     return lookup
@@ -153,6 +159,16 @@ def normalize_optional(value: object) -> str | None:
 
 def normalize_place(value: object) -> str:
     return "".join(ch for ch in str(value).lower() if ch.isalnum())
+
+
+def list_values(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    if isinstance(value, tuple):
+        return [str(item) for item in value if item is not None]
+    if value is None:
+        return []
+    return [str(value)]
 
 
 def usage_columns() -> list[str]:

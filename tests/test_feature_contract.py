@@ -87,6 +87,7 @@ def _catalog_rows() -> list[dict[str, object]]:
     return [
         _catalog("round_feature_id", "context", None, None, None, False, "identifier/metadata column"),
         _catalog("team_smokes_start", "utility", None, None, None, True, None),
+        _catalog("team_center_x_10s", "region_position", 0, 10, "point", True, None),
         _catalog("players_mid_control_0_35", "region_position", 0, 35, "cumulative", True, None),
         _catalog("players_a_pressure_15_25", "region_position", 15, 25, "interval", True, None),
         _catalog("players_palace_control_0_15", "region_position", 0, 15, "interval", True, None),
@@ -120,6 +121,7 @@ def _round_row() -> dict[str, object]:
     return {
         "round_feature_id": "rf_1",
         "team_smokes_start": 5,
+        "team_center_x_10s": 12.0,
         "players_mid_control_0_35": 2,
         "players_a_pressure_15_25": 1,
         "players_palace_control_0_15": 1,
@@ -201,9 +203,25 @@ def test_readiness_unknowns_yaml_doc_notebook_are_created(tmp_path: Path) -> Non
     assert not frames["feature_contract_modeling_readiness"].empty
     assert not frames["feature_contract_dashboard_readiness"].empty
     parsed_yaml = yaml.safe_load(outputs["config_yaml"].read_text(encoding="utf-8"))
-    assert parsed_yaml["feature_contract_version"] == "v1"
+    assert parsed_yaml["feature_contract_version"] == "v2"
+    feature = next(item for item in parsed_yaml["features"] if item["feature_name"] == "team_smokes_start")
+    assert feature["generation_scope"] == "global"
+    assert feature["coordinate_dependency"] == "none"
+    assert feature["cross_map_comparable"] is True
     assert outputs["report"].read_text(encoding="utf-8").startswith("# Feature Contract")
     json.loads(outputs["notebook"].read_text(encoding="utf-8"))
+
+
+def test_feature_contract_v2_comparability_metadata(tmp_path: Path) -> None:
+    config = _write_fixture(tmp_path)
+    frames, _, _ = run_feature_contract(config, dry_run=True)
+    contract = frames["feature_contract"].set_index("feature_name")
+
+    assert contract.loc["team_smokes_start", "cross_map_comparison_mode"] == "direct"
+    assert contract.loc["team_center_x_10s", "coordinate_dependency"] == "raw_map_coordinates"
+    assert not bool(contract.loc["team_center_x_10s", "cross_map_comparable"])
+    assert contract.loc["players_mid_control_0_35", "cross_map_comparison_mode"] == "semantic"
+    assert contract.loc["players_palace_control_0_15", "cross_map_comparison_mode"] == "map_specific_only"
 
 
 def test_feature_contract_does_not_modify_upstream_datasets(tmp_path: Path) -> None:

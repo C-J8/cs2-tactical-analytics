@@ -9,7 +9,7 @@ The contract separates modeling safety, dashboard usefulness, map portability, a
 ## Current feature inventory
 | audit_id                | feature_contract_version   |   total_features |   frozen_features |   exploratory_features |   deprecated_features |   internal_features |   blocked_features |   global_features |   map_abstract_features |   map_specific_features |   unknown_map_scope |   modeling_allowed_features |   dashboard_allowed_features |   temporal_features |   mirage_specific_features |   features_requiring_map_registry |   unknown_classification_rows | missing_optional_inputs   | config_written   | report_written   | status   | created_at                       |
 |:------------------------|:---------------------------|-----------------:|------------------:|-----------------------:|----------------------:|--------------------:|-------------------:|------------------:|------------------------:|------------------------:|--------------------:|----------------------------:|-----------------------------:|--------------------:|---------------------------:|----------------------------------:|------------------------------:|:--------------------------|:-----------------|:-----------------|:---------|:---------------------------------|
-| feature_contract_freeze | v1                         |              492 |               471 |                      0 |                     0 |                   5 |                 16 |               184 |                     308 |                       0 |                   0 |                         471 |                          479 |                 448 |                          0 |                               308 |                            22 | none                      | True             | True             | warning  | 2026-08-07T21:57:03.321100+00:00 |
+| feature_contract_freeze | v2                         |              492 |               471 |                      0 |                     0 |                   5 |                 16 |               184 |                     308 |                       0 |                   0 |                         471 |                          479 |                 448 |                          0 |                               308 |                            22 | none                      | True             | True             | warning  | 2026-08-18T20:49:43.873245+00:00 |
 
 ## Feature families
 | group_type     | group_value     |   feature_count |   temporal_features |   modeling_features |   dashboard_features |   mirage_specific_features |   unknown_features |
@@ -136,63 +136,70 @@ Labels, identifiers, post-round outcomes, plant result fields, quality/audit met
 | map_scope    | global        |             184 |                 140 |                 163 |                  171 |                          0 |                  0 |
 | map_scope    | map_abstract  |             308 |                 308 |                 308 |                  308 |                          0 |                  0 |
 
+## Cross-map comparability
+| group_type                | group_value         |   feature_count |   temporal_features |   modeling_features |   dashboard_features |   mirage_specific_features |   unknown_features |
+|:--------------------------|:--------------------|----------------:|--------------------:|--------------------:|---------------------:|---------------------------:|-------------------:|
+| cross_map_comparison_mode | direct              |             169 |                 125 |                 148 |                  156 |                          0 |                  0 |
+| cross_map_comparison_mode | normalized_required |              15 |                  15 |                  15 |                   15 |                          0 |                  0 |
+| cross_map_comparison_mode | semantic            |             308 |                 308 |                 308 |                  308 |                          0 |                  0 |
+
 ## Global features
-| feature_name               | feature_family   | modeling_allowed   | dashboard_allowed   |
-|:---------------------------|:-----------------|:-------------------|:--------------------|
-| avg_pairwise_distance_10s  | region_position  | True               | True                |
-| avg_pairwise_distance_115s | region_position  | True               | True                |
-| avg_pairwise_distance_15s  | region_position  | True               | True                |
-| avg_pairwise_distance_20s  | region_position  | True               | True                |
-| avg_pairwise_distance_25s  | region_position  | True               | True                |
-| bomb_planted               | bomb             | False              | True                |
-| bombsite                   | bomb             | False              | True                |
-| dataset_type               | quality          | False              | False               |
-| dem_file_id                | identity         | False              | False               |
-| feature_notes              | quality          | False              | False               |
-| feature_quality_status     | quality          | False              | False               |
-| first_molotov_time         | utility          | True               | True                |
-| first_smoke_time           | utility          | True               | True                |
-| first_utility_time         | utility          | True               | True                |
-| flashes_used_0_105         | utility          | True               | True                |
-| flashes_used_0_115         | utility          | True               | True                |
-| flashes_used_0_15          | utility          | True               | True                |
-| flashes_used_0_20          | utility          | True               | True                |
-| flashes_used_0_25          | utility          | True               | True                |
-| flashes_used_0_35          | utility          | True               | True                |
-| flashes_used_0_45          | utility          | True               | True                |
-| flashes_used_0_55          | utility          | True               | True                |
-| flashes_used_0_65          | utility          | True               | True                |
-| flashes_used_0_75          | utility          | True               | True                |
-| flashes_used_0_85          | utility          | True               | True                |
+| feature_name               | feature_family   | coordinate_dependency   | cross_map_comparison_mode   | modeling_allowed   | dashboard_allowed   |
+|:---------------------------|:-----------------|:------------------------|:----------------------------|:-------------------|:--------------------|
+| avg_pairwise_distance_10s  | region_position  | none                    | direct                      | True               | True                |
+| avg_pairwise_distance_115s | region_position  | none                    | direct                      | True               | True                |
+| avg_pairwise_distance_15s  | region_position  | none                    | direct                      | True               | True                |
+| avg_pairwise_distance_20s  | region_position  | none                    | direct                      | True               | True                |
+| avg_pairwise_distance_25s  | region_position  | none                    | direct                      | True               | True                |
+| bomb_planted               | bomb             | none                    | direct                      | False              | True                |
+| bombsite                   | bomb             | none                    | direct                      | False              | True                |
+| dataset_type               | quality          | none                    | direct                      | False              | False               |
+| dem_file_id                | identity         | none                    | direct                      | False              | False               |
+| feature_notes              | quality          | none                    | direct                      | False              | False               |
+| feature_quality_status     | quality          | none                    | direct                      | False              | False               |
+| first_molotov_time         | utility          | none                    | direct                      | True               | True                |
+| first_smoke_time           | utility          | none                    | direct                      | True               | True                |
+| first_utility_time         | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_105         | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_115         | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_15          | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_20          | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_25          | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_35          | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_45          | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_55          | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_65          | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_75          | utility          | none                    | direct                      | True               | True                |
+| flashes_used_0_85          | utility          | none                    | direct                      | True               | True                |
 
 ## Map-abstract features
-| feature_name                   | region_semantic   | modeling_allowed   | notes                                 |
-|:-------------------------------|:------------------|:-------------------|:--------------------------------------|
-| molotovs_to_a_pressure_0_105   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_115   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_15    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_20    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_25    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_35    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_45    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_55    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_65    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_75    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_85    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_0_95    | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_105_115 | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_15_25   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_25_35   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_35_45   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_45_55   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_55_65   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_65_75   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_75_85   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_85_95   | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_a_pressure_95_105  | a_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_b_pressure_0_105   | b_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_b_pressure_0_115   | b_pressure        | True               | Requires active map region semantics. |
-| molotovs_to_b_pressure_0_15    | b_pressure        | True               | Requires active map region semantics. |
+| feature_name                   | region_semantic   | cross_map_comparable   | cross_map_comparison_mode   | modeling_allowed   | notes                                 |
+|:-------------------------------|:------------------|:-----------------------|:----------------------------|:-------------------|:--------------------------------------|
+| molotovs_to_a_pressure_0_105   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_115   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_15    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_20    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_25    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_35    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_45    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_55    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_65    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_75    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_85    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_0_95    | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_105_115 | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_15_25   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_25_35   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_35_45   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_45_55   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_55_65   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_65_75   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_75_85   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_85_95   | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_a_pressure_95_105  | a_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_b_pressure_0_105   | b_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_b_pressure_0_115   | b_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
+| molotovs_to_b_pressure_0_15    | b_pressure        | True                   | semantic                    | True               | Requires active map region semantics. |
 
 ## Mirage-specific features
 _No rows available._

@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.6 -- Generic Map Area Discovery**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.7 -- Inferno Physical Region & Tactical Semantic Mapping**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, and generic area discovery from real parser `place` + X/Y/Z evidence. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, and audited Inferno physical/semantic region mapping. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -37,6 +37,7 @@ Validated local snapshot for Vitality on Mirage:
 - 1 Stage 8.4 Inferno onboarding package registering 5 local Inferno demos for Vitality;
 - 1 Stage 8.5 multi-map parsing gate showing 5 parsed Inferno demos, 5 feature-eligible Inferno demos, Mirage preservation, and `ready_for_area_discovery = true`;
 - 1 Stage 8.6 area discovery package with 23 Mirage places, 24 Inferno places, real coordinate/coverage/stability profiles, Mirage crosswalk coverage of 100% of observed ticks, and Inferno `ready_for_region_mapping = true`;
+- 1 Stage 8.7 Inferno region-mapping package with 24 mapped raw places, 21 active physical regions, 4 frozen map-abstract semantics resolved, 31 candidate features audited for portability, and Mirage regression green after Feature Contract v2 metadata;
 - 209 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
@@ -71,6 +72,7 @@ python -m src.parsing.parse_quality --config configs/project.yaml --target-map I
 python -m src.validation.multi_map_parse_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.maps.discover_map_areas --config configs/project.yaml --map Mirage --target-team Vitality --force
 python -m src.maps.discover_map_areas --config configs/project.yaml --map Inferno --target-team Vitality --force
+python -m src.maps.build_region_mapping --config configs/project.yaml --map Inferno --target-team Vitality --force
 ```
 
 Important dependency rules:
@@ -93,6 +95,7 @@ Important dependency rules:
 - Stage 8.4 registers Inferno and writes onboarding/readiness audits under `data/gold/maps/inferno/onboarding/`; it does not train models, scrape HLTV, or overwrite Mirage feature outputs.
 - Stage 8.5 resolves map names through canonical identity, parses explicit map/team scopes safely, preserves other maps during forced upserts, and validates readiness for future area discovery. It does not discover Inferno areas, edit Inferno semantic mappings, run Inferno feature engineering, train models, or build dashboards.
 - Stage 8.6 discovers raw parser places and coordinate evidence for parsed maps. It does not update Mirage or Inferno registry YAML files, infer tactical semantic groups, run feature engineering, train models, or alter Stage 6 outputs.
+- Stage 8.7 maps Inferno raw parser places into verified physical regions and tactical semantic groups, updates Inferno registry status to active, and adds Feature Contract v2 comparability metadata. It does not run Inferno feature engineering, round state, T-side datasets, ML, dashboards, or BigQuery.
 
 ## MVP Scope
 
@@ -1705,9 +1708,91 @@ Current Stage 8.6 snapshot:
 
 Mirage is used as a validation reference. The current Mirage registry explains 100% of observed Mirage tick places in this local sample, with 23 matched observed places and no unmatched observed places.
 
-Inferno now has real raw-place, coordinate, coverage, stability, vertical-profile, and sample outputs. The Inferno registry remains intentionally unresolved in `configs/maps/inferno.yaml`; this stage does not write callouts, bounding boxes, aliases, or semantic groups into that file.
+Inferno now has real raw-place, coordinate, coverage, stability, vertical-profile, and sample outputs. Stage 8.6 does not decide that raw places such as `Banana`, `BombsiteA`, `Middle`, or `Apartments` belong to tactical groups like `b_pressure`, `site_a`, or `mid_control`; that physical-to-semantic mapping is handled by Stage 8.7.
 
-Important limitation: Stage 8.6 does not decide that raw places such as `Banana`, `BombsiteA`, `Middle`, or `Apartments` belong to tactical groups like `b_pressure`, `site_a`, or `mid_control`. That physical-to-semantic mapping is reserved for Stage 8.7.
+## Stage 8.7 -- Inferno Physical Region & Tactical Semantic Mapping
+
+Stage 8.7 formalizes Inferno in the map registry using Stage 8.6 evidence. It maps raw parser places to physical regions, maps physical regions to tactical semantic groups, validates bombsites, updates Feature Contract metadata to v2, and confirms Mirage behavior through the regression gate.
+
+Run the mapping:
+
+```bash
+python -m src.maps.build_region_mapping --config configs/project.yaml --map Inferno --target-team Vitality --force
+```
+
+Then refresh registry outputs and run the Mirage regression gate:
+
+```bash
+python -m src.maps.build_map_registry --config configs/project.yaml --force
+python -m src.validation.mirage_regression_gate --config configs/project.yaml --target-map Mirage --target-team Vitality --force
+```
+
+Stage 8.7 writes:
+
+```text
+data/gold/maps/inferno/region_mapping/
+docs/inferno_region_mapping.md
+notebooks/21_inferno_region_mapping.ipynb
+configs/maps/inferno.yaml
+configs/maps/map_registry.yaml
+```
+
+Main outputs:
+
+- `inferno_region_mapping_proposal`;
+- `inferno_place_region_crosswalk`;
+- `inferno_physical_region_inventory`;
+- `inferno_semantic_mapping`;
+- `inferno_semantic_coverage`;
+- `inferno_region_coordinate_validation`;
+- `inferno_candidate_feature_portability_v2`;
+- `inferno_region_mapping_unknowns`;
+- `inferno_region_mapping_audit`.
+
+Current Stage 8.7 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Raw Inferno places observed | 24 |
+| Raw Inferno places mapped | 24 |
+| Mapped tick share | 100% |
+| Active physical regions | 21 |
+| Required frozen map-abstract semantics | 4 |
+| Missing required semantics | 0 |
+| Candidate features audited | 31 |
+| Candidate features cross-map comparable | 22 |
+| Mirage regression datasets failed | 0 |
+| ready_for_inferno_feature_run | true |
+
+Inferno uses `geometry.type: named_area` with `geometry.area_names` as the official source-place mapping. The registry lookup now resolves `region_id`, `display_name`, `aliases`, `geometry.area_names`, and `geometry.source_place_aliases`, preserving Mirage compatibility while allowing parser-native names like `Banana` and `BombsiteA` to resolve directly.
+
+The verified physical-to-semantic layers are:
+
+- raw parser place -> physical region;
+- physical region -> tactical semantic group;
+- tactical semantic group -> map-abstract feature.
+
+Examples:
+
+| Raw place | Physical region | Semantic |
+| --- | --- | --- |
+| `Banana` | `banana` | `b_pressure` |
+| `BombsiteA` | `bombsitea` | `site_a` |
+| `BombsiteB` | `bombsiteb` | `site_b` |
+| `Middle` | `middle` | `mid_control` |
+| `CTSpawn` | `ctspawn` | `ct_space` |
+| `Bridge`, `Upstairs`, `Deck`, `Kitchen` | `second_mid_upper` | `mid_control`, `rotation` |
+
+Feature Contract v2 separates generation portability from cross-map analytical comparability:
+
+- utility counts can be `direct` comparable;
+- semantic-region features compare through `semantic` mode once each map has validated semantics;
+- raw coordinate features such as `team_center_x_*` are available to generate but are not directly comparable without normalization;
+- map-specific Mirage terms remain `map_specific_only`.
+
+Important interpretation: `available_on_inferno = true` does not mean a Mirage-trained model can predict Inferno. It only means the feature can be generated safely for Inferno. Model transfer and multi-map modeling remain out of scope until a later stage.
+
+Stage 8.7 deliberately does not run Inferno feature engineering, Inferno round state, Inferno T-side/CT-side datasets, ML, dashboards, BigQuery, or a new map/team onboarding.
 
 Validation commands:
 

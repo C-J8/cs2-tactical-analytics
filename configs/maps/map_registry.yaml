@@ -13,6 +13,7 @@ maps:
   game_map_name: de_inferno
   config_path: configs/maps/inferno.yaml
   region_schema_version: v1
-  status: onboarding
+  status: active
   is_reference_map: false
-  notes: First new-map onboarding registry. Physical regions are unresolved until Inferno parser/nav area inventory is available.
+  notes: Inferno physical region and tactical semantic mapping resolved from Stage
+    8.6 observed parser places.

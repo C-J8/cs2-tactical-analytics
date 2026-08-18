@@ -4,7 +4,7 @@ game_map_name: de_inferno
 region_schema_version: v1
 boundary_policy: existing_behavior
 coordinate_system:
-  source: pending_parser_area_inventory
+  source: awpy_parser_named_areas
   axis_x: x
   axis_y: y
   axis_z: z
@@ -13,204 +13,557 @@ coordinate_system:
   - place_name
   - player_last_place_name
   - place
-  notes: No Inferno Awpy/nav area inventory is present locally yet. Regions are named-area placeholders marked unresolved; do not use for production feature generation until parser area names are confirmed.
+  notes: Inferno registry uses Stage 8.6 observed parser place names through geometry.area_names.
 physical_regions:
-- region_id: inferno_mid_control_unresolved
-  display_name: Inferno Mid Control Unresolved
+- region_id: banana
+  display_name: Banana
   geometry:
     type: named_area
-    source: pending_parser_area_inventory
-    area_names: []
-    notes: Parser/nav area names for Inferno mid-control have not been observed in local parsed data.
-  semantic_tags:
-  - mid_control
-  site_affinity: []
-  region_scope: map_specific
-  priority: 90
-  boundary_policy: existing_behavior
-  aliases: []
-  status: unresolved
-  notes: Resolve with actual parser place names before feature execution is considered ready.
-- region_id: inferno_a_pressure_unresolved
-  display_name: Inferno A Pressure Unresolved
-  geometry:
-    type: named_area
-    source: pending_parser_area_inventory
-    area_names: []
-    notes: Parser/nav area names for Inferno A pressure have not been observed in local parsed data.
-  semantic_tags:
-  - a_pressure
-  site_affinity:
-  - A
-  region_scope: map_specific
-  priority: 89
-  boundary_policy: existing_behavior
-  aliases: []
-  status: unresolved
-  notes: Resolve with actual parser place names before feature execution is considered ready.
-- region_id: inferno_b_pressure_unresolved
-  display_name: Inferno B Pressure Unresolved
-  geometry:
-    type: named_area
-    source: pending_parser_area_inventory
-    area_names: []
-    notes: Parser/nav area names for Inferno B pressure have not been observed in local parsed data.
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Banana
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
   semantic_tags:
   - b_pressure
   site_affinity:
   - B
   region_scope: map_specific
-  priority: 88
+  priority: 99
   boundary_policy: existing_behavior
-  aliases: []
-  status: unresolved
-  notes: Resolve with actual parser place names before feature execution is considered ready.
-- region_id: inferno_ct_space_unresolved
-  display_name: Inferno CT Space Unresolved
+  aliases: &id001
+  - Banana
+  - banana
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: bombsiteb
+  display_name: Bombsite B
   geometry:
     type: named_area
-    source: pending_parser_area_inventory
-    area_names: []
-    notes: Parser/nav area names for Inferno CT/rotation defensive space have not been observed in local parsed data.
-  semantic_tags:
-  - ct_space
-  site_affinity: []
-  region_scope: map_specific
-  priority: 87
-  boundary_policy: existing_behavior
-  aliases: []
-  status: unresolved
-  notes: Resolve with actual parser place names before feature execution is considered ready.
-- region_id: inferno_rotation_unresolved
-  display_name: Inferno Rotation Unresolved
-  geometry:
-    type: named_area
-    source: pending_parser_area_inventory
-    area_names: []
-    notes: Parser/nav area names for Inferno rotation space have not been observed in local parsed data.
-  semantic_tags:
-  - rotation
-  site_affinity: []
-  region_scope: map_specific
-  priority: 86
-  boundary_policy: existing_behavior
-  aliases: []
-  status: unresolved
-  notes: Resolve with actual parser place names before feature execution is considered ready.
-- region_id: inferno_site_a_unresolved
-  display_name: Inferno Site A Unresolved
-  geometry:
-    type: named_area
-    source: pending_parser_area_inventory
-    area_names: []
-    notes: Parser/nav area names for Inferno bombsite A have not been observed in local parsed data.
-  semantic_tags:
-  - site_a
-  site_affinity:
-  - A
-  region_scope: map_specific
-  priority: 85
-  boundary_policy: existing_behavior
-  aliases: []
-  status: unresolved
-  notes: Resolve with actual parser place names before feature execution is considered ready.
-- region_id: inferno_site_b_unresolved
-  display_name: Inferno Site B Unresolved
-  geometry:
-    type: named_area
-    source: pending_parser_area_inventory
-    area_names: []
-    notes: Parser/nav area names for Inferno bombsite B have not been observed in local parsed data.
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - BombsiteB
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
   semantic_tags:
   - site_b
   site_affinity:
   - B
   region_scope: map_specific
-  priority: 84
+  priority: 98
   boundary_policy: existing_behavior
-  aliases: []
-  status: unresolved
-  notes: Resolve with actual parser place names before feature execution is considered ready.
-- region_id: inferno_t_spawn_unresolved
-  display_name: Inferno T Spawn Unresolved
+  aliases: &id002
+  - Bombsite B
+  - BombsiteB
+  - bombsiteb
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: ctspawn
+  display_name: CT Spawn
   geometry:
     type: named_area
-    source: pending_parser_area_inventory
-    area_names: []
-    notes: Parser/nav area names for Inferno T start space have not been observed in local parsed data.
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - CTSpawn
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - ct_space
+  site_affinity: []
+  region_scope: map_specific
+  priority: 97
+  boundary_policy: existing_behavior
+  aliases: &id003
+  - CT Spawn
+  - CTSpawn
+  - ctspawn
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: bombsitea
+  display_name: Bombsite A
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - BombsiteA
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - site_a
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 96
+  boundary_policy: existing_behavior
+  aliases: &id004
+  - Bombsite A
+  - BombsiteA
+  - bombsitea
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: tspawn
+  display_name: T Spawn
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - TSpawn
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
   semantic_tags:
   - t_spawn_area
   site_affinity: []
   region_scope: map_specific
+  priority: 95
+  boundary_policy: existing_behavior
+  aliases: &id005
+  - T Spawn
+  - TSpawn
+  - tspawn
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: middle
+  display_name: Middle
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Middle
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 94
+  boundary_policy: existing_behavior
+  aliases: &id006
+  - Middle
+  - middle
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: apartments
+  display_name: Apartments
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Apartments
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 93
+  boundary_policy: existing_behavior
+  aliases: &id007
+  - Apartments
+  - apartments
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: topofmid
+  display_name: Top of Mid
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - TopofMid
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 92
+  boundary_policy: existing_behavior
+  aliases: &id008
+  - Top of Mid
+  - TopofMid
+  - topofmid
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: ruins
+  display_name: Ruins
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Ruins
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - b_pressure
+  site_affinity:
+  - B
+  region_scope: map_specific
+  priority: 91
+  boundary_policy: existing_behavior
+  aliases: &id009
+  - Ruins
+  - ruins
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: pit
+  display_name: Pit
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Pit
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 90
+  boundary_policy: existing_behavior
+  aliases: &id010
+  - Pit
+  - pit
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: arch
+  display_name: Arch
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Arch
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - ct_space
+  - rotation
+  site_affinity: []
+  region_scope: map_specific
+  priority: 89
+  boundary_policy: existing_behavior
+  aliases: &id011
+  - Arch
+  - arch
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: tramp
+  display_name: T Ramp
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - TRamp
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - mid_control
+  - t_spawn_area
+  site_affinity: []
+  region_scope: map_specific
+  priority: 88
+  boundary_policy: existing_behavior
+  aliases: &id012
+  - T Ramp
+  - TRamp
+  - tramp
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: secondmid
+  display_name: Second Mid
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - SecondMid
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 87
+  boundary_policy: existing_behavior
+  aliases: &id013
+  - Second Mid
+  - SecondMid
+  - secondmid
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: lowermid
+  display_name: Lower Mid
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - LowerMid
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - mid_control
+  site_affinity: []
+  region_scope: map_specific
+  priority: 86
+  boundary_policy: existing_behavior
+  aliases: &id014
+  - Lower Mid
+  - LowerMid
+  - lowermid
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: balcony
+  display_name: Balcony
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Balcony
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 85
+  boundary_policy: existing_behavior
+  aliases: &id015
+  - Balcony
+  - balcony
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: library
+  display_name: Library
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Library
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - ct_space
+  - rotation
+  site_affinity: []
+  region_scope: map_specific
+  priority: 84
+  boundary_policy: existing_behavior
+  aliases: &id016
+  - Library
+  - library
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: quad
+  display_name: Quad
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Quad
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
   priority: 83
   boundary_policy: existing_behavior
-  aliases: []
-  status: unresolved
-  notes: Resolve with actual parser place names before feature execution is considered ready.
+  aliases: &id017
+  - Quad
+  - quad
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: second_mid_upper
+  display_name: Second Mid Upper Route
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Bridge
+    - Deck
+    - Kitchen
+    - Upstairs
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - mid_control
+  - rotation
+  site_affinity: []
+  region_scope: map_specific
+  priority: 82
+  boundary_policy: existing_behavior
+  aliases: &id018
+  - Bridge
+  - Deck
+  - Kitchen
+  - Second Mid Upper Route
+  - Upstairs
+  - second_mid_upper
+  status: active
+  notes: Grouped named-area physical region from Stage 8.6 place evidence.
+- region_id: backalley
+  display_name: Back Alley
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - BackAlley
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 81
+  boundary_policy: existing_behavior
+  aliases: &id019
+  - Back Alley
+  - BackAlley
+  - backalley
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: underpass
+  display_name: Underpass
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Underpass
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - mid_control
+  - rotation
+  site_affinity: []
+  region_scope: map_specific
+  priority: 80
+  boundary_policy: existing_behavior
+  aliases: &id020
+  - Underpass
+  - underpass
+  status: active
+  notes: Direct named-area mapping from observed parser place.
+- region_id: graveyard
+  display_name: Graveyard
+  geometry:
+    type: named_area
+    source: stage_8_6_parser_place_inventory
+    area_names:
+    - Graveyard
+    notes: Uses observed CS2 parser/nav place names; no custom bbox added in Stage
+      8.7.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 79
+  boundary_policy: existing_behavior
+  aliases: &id021
+  - Graveyard
+  - graveyard
+  status: active
+  notes: Direct named-area mapping from observed parser place.
 semantic_groups:
-  mid_control:
-    description: Map-dependent central tactical space for Inferno, unresolved until actual parser place names are available.
-    member_regions:
-    - inferno_mid_control_unresolved
-    status: unresolved
-    notes: Pending Inferno area inventory from parser/nav data.
   a_pressure:
-    description: Map-dependent attacking pressure toward bombsite A for Inferno, unresolved until actual parser place names are available.
+    description: Regions representing meaningful attacking pressure toward bombsite
+      A.
     member_regions:
-    - inferno_a_pressure_unresolved
-    status: unresolved
-    notes: Pending Inferno area inventory from parser/nav data.
+    - apartments
+    - pit
+    - balcony
+    - quad
+    - backalley
+    - graveyard
+    status: active
+    notes: Resolved from observed Inferno parser places.
   b_pressure:
-    description: Map-dependent attacking pressure toward bombsite B for Inferno, unresolved until actual parser place names are available.
+    description: Regions representing meaningful attacking pressure toward bombsite
+      B.
     member_regions:
-    - inferno_b_pressure_unresolved
-    status: unresolved
-    notes: Pending Inferno area inventory from parser/nav data.
+    - banana
+    - ruins
+    status: active
+    notes: Resolved from observed Inferno parser places.
   ct_space:
-    description: Defensive/CT-side space for Inferno, unresolved until actual parser place names are available.
+    description: Defensive or CT-side space used by current region mapping.
     member_regions:
-    - inferno_ct_space_unresolved
-    status: unresolved
-    notes: Pending Inferno area inventory from parser/nav data.
+    - ctspawn
+    - arch
+    - library
+    status: active
+    notes: Resolved from observed Inferno parser places.
+  mid_control:
+    description: Map-dependent areas representing meaningful control of central tactical
+      space.
+    member_regions:
+    - middle
+    - topofmid
+    - tramp
+    - secondmid
+    - lowermid
+    - second_mid_upper
+    - underpass
+    status: active
+    notes: Resolved from observed Inferno parser places.
   rotation:
-    description: Rotation space for Inferno, unresolved until actual parser place names are available.
+    description: Connector or rotation areas linking major tactical spaces.
     member_regions:
-    - inferno_rotation_unresolved
-    status: unresolved
-    notes: Pending Inferno area inventory from parser/nav data.
+    - arch
+    - library
+    - second_mid_upper
+    - underpass
+    status: active
+    notes: Resolved from observed Inferno parser places.
   site_a:
-    description: Inferno bombsite A, unresolved until parser/nav area names are available.
+    description: Physical bombsite A regions.
     member_regions:
-    - inferno_site_a_unresolved
-    status: unresolved
-    notes: Pending Inferno area inventory from parser/nav data.
+    - bombsitea
+    status: active
+    notes: Resolved from observed Inferno parser places.
   site_b:
-    description: Inferno bombsite B, unresolved until parser/nav area names are available.
+    description: Physical bombsite B regions.
     member_regions:
-    - inferno_site_b_unresolved
-    status: unresolved
-    notes: Pending Inferno area inventory from parser/nav data.
+    - bombsiteb
+    status: active
+    notes: Resolved from observed Inferno parser places.
   t_spawn_area:
-    description: Inferno T-side start space, unresolved until parser/nav area names are available.
+    description: Map-dependent areas representing the T-side spawn/start space.
     member_regions:
-    - inferno_t_spawn_unresolved
-    status: unresolved
-    notes: Pending Inferno area inventory from parser/nav data.
+    - tspawn
+    - tramp
+    status: active
+    notes: Resolved from observed Inferno parser places.
 aliases:
-  inferno_mid_control_unresolved: []
-  inferno_a_pressure_unresolved: []
-  inferno_b_pressure_unresolved: []
-  inferno_ct_space_unresolved: []
-  inferno_rotation_unresolved: []
-  inferno_site_a_unresolved: []
-  inferno_site_b_unresolved: []
-  inferno_t_spawn_unresolved: []
+  banana: *id001
+  bombsiteb: *id002
+  ctspawn: *id003
+  bombsitea: *id004
+  tspawn: *id005
+  middle: *id006
+  apartments: *id007
+  topofmid: *id008
+  ruins: *id009
+  pit: *id010
+  arch: *id011
+  tramp: *id012
+  secondmid: *id013
+  lowermid: *id014
+  balcony: *id015
+  library: *id016
+  quad: *id017
+  second_mid_upper: *id018
+  backalley: *id019
+  underpass: *id020
+  graveyard: *id021
 bombsites:
   A:
     region_ids:
-    - inferno_site_a_unresolved
-    notes: Structural bombsite A placeholder; parser place names must still be confirmed.
+    - bombsitea
+    notes: Resolved from observed raw place BombsiteA.
   B:
     region_ids:
-    - inferno_site_b_unresolved
-    notes: Structural bombsite B placeholder; parser place names must still be confirmed.
+    - bombsiteb
+    notes: Resolved from observed raw place BombsiteB.
