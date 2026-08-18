@@ -318,7 +318,124 @@ def test_parse_demos_skips_not_parse_eligible_rows(tmp_path: Path) -> None:
     assert summary["total_eligible"] == 0
 
 
-def test_force_parse_clears_silver_and_writes_parse_audit(tmp_path: Path) -> None:
+def test_target_map_inferno_selects_de_inferno_and_not_mirage(tmp_path: Path) -> None:
+    dem_mirage = tmp_path / "mirage.dem"
+    dem_inferno = tmp_path / "inferno.dem"
+    dem_mirage.write_bytes(b"mirage")
+    dem_inferno.write_bytes(b"inferno")
+    demo_manifest_path = tmp_path / "demo_manifest.parquet"
+    pd.DataFrame([]).to_parquet(demo_manifest_path, index=False)
+    dem_files_path = tmp_path / "data/bronze/dem_files_manifest/dem_files_manifest.parquet"
+    dem_files_path.parent.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "dem_file_id": "mirage1",
+                "local_archive_id": "archive1",
+                "dem_path": str(dem_mirage),
+                "dem_file_name": dem_mirage.name,
+                "target_team": "Vitality",
+                "inferred_map_name": "Mirage",
+                "inferred_map_number": 1,
+            },
+            {
+                "dem_file_id": "inferno1",
+                "local_archive_id": "archive2",
+                "dem_path": str(dem_inferno),
+                "dem_file_name": dem_inferno.name,
+                "target_team": "Vitality",
+                "inferred_map_name": "de_inferno",
+                "inferred_map_number": 2,
+            },
+        ]
+    ).to_parquet(dem_files_path, index=False)
+    config_path = _write_config(tmp_path, demo_manifest_path)
+
+    parse_manifest, _, summary = run_parse_pipeline(config_path, dry_run=True, target_maps=["Inferno"])
+
+    assert summary["total_eligible"] == 1
+    assert parse_manifest["dem_file_name"].tolist() == ["inferno.dem"]
+    assert parse_manifest.loc[0, "parse_status"] == "dry_run"
+
+
+def test_target_team_restricts_parse_scope(tmp_path: Path) -> None:
+    vita = tmp_path / "vita.dem"
+    navi = tmp_path / "navi.dem"
+    vita.write_bytes(b"vita")
+    navi.write_bytes(b"navi")
+    demo_manifest_path = tmp_path / "demo_manifest.parquet"
+    pd.DataFrame([]).to_parquet(demo_manifest_path, index=False)
+    dem_files_path = tmp_path / "data/bronze/dem_files_manifest/dem_files_manifest.parquet"
+    dem_files_path.parent.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {"dem_file_id": "vita1", "local_archive_id": "a1", "dem_path": str(vita), "dem_file_name": vita.name, "target_team": "Vitality", "inferred_map_name": "de_inferno"},
+            {"dem_file_id": "navi1", "local_archive_id": "a2", "dem_path": str(navi), "dem_file_name": navi.name, "target_team": "NAVI", "inferred_map_name": "de_inferno"},
+        ]
+    ).to_parquet(dem_files_path, index=False)
+    config_path = _write_config(tmp_path, demo_manifest_path)
+
+    parse_manifest, _, summary = run_parse_pipeline(config_path, dry_run=True, target_maps=["Inferno"], target_team="Vitality")
+
+    assert summary["total_eligible"] == 1
+    assert parse_manifest["dem_file_name"].tolist() == ["vita.dem"]
+
+
+def test_scoped_parse_manifest_preserves_other_map_entries(tmp_path: Path) -> None:
+    dem_inferno = tmp_path / "inferno.dem"
+    dem_inferno.write_bytes(b"inferno")
+    demo_manifest_path = tmp_path / "demo_manifest.parquet"
+    pd.DataFrame([]).to_parquet(demo_manifest_path, index=False)
+    dem_files_path = tmp_path / "data/bronze/dem_files_manifest/dem_files_manifest.parquet"
+    dem_files_path.parent.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "dem_file_id": "inferno1",
+                "local_archive_id": "archive2",
+                "dem_path": str(dem_inferno),
+                "dem_file_name": dem_inferno.name,
+                "target_team": "Vitality",
+                "inferred_map_name": "de_inferno",
+            }
+        ]
+    ).to_parquet(dem_files_path, index=False)
+    config_path = _write_config(tmp_path, demo_manifest_path)
+    existing_dir = tmp_path / "data/bronze/parse_manifest"
+    existing_dir.mkdir(parents=True)
+    pd.DataFrame([_parse_manifest_row("mirage1_awpy", "Mirage", "parsed")]).to_parquet(existing_dir / "parse_manifest.parquet", index=False)
+
+    parse_manifest, _, _ = run_parse_pipeline(config_path, force=True, target_maps=["Inferno"], parser_class=FakeParser)
+
+    assert {"mirage1_awpy", "inferno1_awpy"} <= set(parse_manifest["parse_id"])
+    assert parse_manifest["parse_id"].is_unique
+    assert parse_manifest[parse_manifest["parse_id"] == "inferno1_awpy"].iloc[0]["parse_status"] == "parsed"
+
+
+def test_scoped_force_is_idempotent_for_silver_rows(tmp_path: Path) -> None:
+    dem_inferno = tmp_path / "inferno.dem"
+    dem_inferno.write_bytes(b"inferno")
+    demo_manifest_path = tmp_path / "demo_manifest.parquet"
+    pd.DataFrame([]).to_parquet(demo_manifest_path, index=False)
+    dem_files_path = tmp_path / "data/bronze/dem_files_manifest/dem_files_manifest.parquet"
+    dem_files_path.parent.mkdir(parents=True)
+    pd.DataFrame([{"dem_file_id": "inferno1", "local_archive_id": "archive2", "dem_path": str(dem_inferno), "dem_file_name": dem_inferno.name, "target_team": "Vitality", "inferred_map_name": "de_inferno"}]).to_parquet(dem_files_path, index=False)
+    silver_dir = tmp_path / "data/silver/parsed_demos"
+    silver_dir.mkdir(parents=True)
+    pd.DataFrame({"round_num": [1], "source_parse_id": ["mirage1_awpy"], "map_name": ["Mirage"], "target_team": ["Vitality"]}).to_parquet(silver_dir / "rounds.parquet", index=False)
+    config_path = _write_config(tmp_path, demo_manifest_path)
+
+    run_parse_pipeline(config_path, force=True, target_maps=["Inferno"], parser_class=FakeParser)
+    first = pd.read_parquet(silver_dir / "rounds.parquet")
+    run_parse_pipeline(config_path, force=True, target_maps=["Inferno"], parser_class=FakeParser)
+    second = pd.read_parquet(silver_dir / "rounds.parquet")
+
+    assert len(first) == len(second)
+    assert "mirage1_awpy" in set(second["source_parse_id"])
+    assert int((second["source_parse_id"] == "inferno1_awpy").sum()) == 1
+
+
+def test_force_parse_preserves_other_silver_rows_and_writes_parse_audit(tmp_path: Path) -> None:
     dem_path = tmp_path / "fake.dem"
     dem_path.write_bytes(b"fake")
     manifest_path = tmp_path / "demo_manifest.parquet"
@@ -334,7 +451,68 @@ def test_force_parse_clears_silver_and_writes_parse_audit(tmp_path: Path) -> Non
 
     assert parse_manifest.loc[0, "parse_status"] == "parsed"
     assert summary["total_parsed"] == 1
-    assert "stale" not in set(ticks["source_parse_id"])
+    assert "stale" in set(ticks["source_parse_id"])
+    assert "demo1_awpy" in set(ticks["source_parse_id"])
     assert outputs["parse_audit_csv"].exists()
     assert {"ticks", "rounds", "grenades"}.issubset(set(audit["table_name"]))
     assert bool(audit[audit["table_name"] == "ticks"].iloc[0]["has_tick"]) is True
+
+
+def _parse_manifest_row(parse_id: str, map_name: str, parse_status: str) -> dict[str, object]:
+    row = _manifest_row(f"{parse_id}.dem", demo_record_id=parse_id.removesuffix("_awpy"))
+    return {
+        "parse_id": parse_id,
+        "series_id": row["series_id"],
+        "hltv_match_id": row["hltv_match_id"],
+        "match_date": row["match_date"],
+        "event_name": row["event_name"],
+        "target_team": row["target_team"],
+        "opponent": row["opponent"],
+        "map_name": map_name,
+        "map_number": row["map_number"],
+        "dem_path": row["dem_path"],
+        "dem_file_name": row["dem_file_name"],
+        "dem_file_size_bytes": row["dem_file_size_bytes"],
+        "dem_sha256": row["dem_sha256"],
+        "parser_backend": "awpy",
+        "parser_version": "test",
+        "parse_status": parse_status,
+        "parse_error_message": None,
+        "parsed_at": "now",
+        "output_bronze_dir": "out",
+        "rows_rounds": 1,
+        "rows_kills": 0,
+        "rows_damages": 0,
+        "rows_shots": 0,
+        "rows_bomb": 0,
+        "rows_smokes": 0,
+        "rows_infernos": 0,
+        "rows_grenades": 0,
+        "rows_footsteps": 0,
+        "rows_ticks": 1,
+        "rows_events_total": 0,
+    }
+
+
+def test_reset_silver_requires_force_and_clears_other_rows(tmp_path: Path) -> None:
+    dem_path = tmp_path / "fake.dem"
+    dem_path.write_bytes(b"fake")
+    manifest_path = tmp_path / "demo_manifest.parquet"
+    pd.DataFrame([_manifest_row(dem_path)]).to_parquet(manifest_path, index=False)
+    silver_dir = tmp_path / "data/silver/parsed_demos"
+    silver_dir.mkdir(parents=True)
+    pd.DataFrame({"tick": [0], "source_parse_id": ["stale"]}).to_parquet(silver_dir / "ticks.parquet", index=False)
+    config_path = _write_config(tmp_path, manifest_path)
+
+    try:
+        run_parse_pipeline(config_path, reset_silver=True, parser_class=FakeParser)
+    except ValueError as exc:
+        assert "--reset-silver" in str(exc)
+    else:
+        raise AssertionError("reset_silver without force should fail")
+
+    run_parse_pipeline(config_path, force=True, reset_silver=True, parser_class=FakeParser)
+    ticks = pd.read_parquet(silver_dir / "ticks.parquet")
+
+    assert "stale" not in set(ticks["source_parse_id"])
+    assert "demo1_awpy" in set(ticks["source_parse_id"])

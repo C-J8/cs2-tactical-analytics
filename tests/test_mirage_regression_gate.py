@@ -42,8 +42,8 @@ def _write_all_datasets(tmp_path: Path) -> None:
     _write(data / "silver/parsed_demos", "feature_eligible_demos", [{"parse_id": "p1", "feature_eligible": True, "target_team": "Vitality", "inferred_map_name": "Mirage"}])
     _write(data / "bronze/parse_quality", "parse_quality", [{"parse_id": "p1", "quality_status": "valid_full_map", "feature_eligible": True}])
     round_features = [
-        {"round_feature_id": "r1", "round_id": "round1", "target_site_model_label": "A", "players_mid_control_0_15": 2, "float_feature": 1.0, "string_feature": "x", "bool_feature": True},
-        {"round_feature_id": "r2", "round_id": "round2", "target_site_model_label": "B", "players_mid_control_0_15": 3, "float_feature": 2.0, "string_feature": "y", "bool_feature": False},
+        {"round_feature_id": "r1", "round_id": "round1", "target_team": "Vitality", "map_name": "Mirage", "target_site_model_label": "A", "players_mid_control_0_15": 2, "float_feature": 1.0, "string_feature": "x", "bool_feature": True},
+        {"round_feature_id": "r2", "round_id": "round2", "target_team": "Vitality", "map_name": "Mirage", "target_site_model_label": "B", "players_mid_control_0_15": 3, "float_feature": 2.0, "string_feature": "y", "bool_feature": False},
     ]
     _write(data / "gold/round_features", "round_features_mvp", round_features)
     _write(data / "gold/region_presence", "region_presence_by_round", [_region_row("r1", "round1", "Mid", "MID_CONTROL"), _region_row("r2", "round2", "A Ramp", "A_PRESSURE")])
@@ -133,6 +133,32 @@ def test_same_dataset_passes_and_ready_true(tmp_path: Path) -> None:
 
     assert summary["ready_for_new_map_onboarding"] == 1
     assert frames["mirage_regression_summary"].loc[0, "overall_status"] == "passed"
+    assert frames["mirage_regression_failures"].empty
+
+
+def test_extra_inferno_rows_are_ignored_for_mirage_scope(tmp_path: Path) -> None:
+    config = _write_fixture(tmp_path)
+    _create_baseline(config)
+    feature_path = tmp_path / "data/gold/round_features/round_features_mvp.parquet"
+    features = pd.read_parquet(feature_path)
+    inferno = features.iloc[[0]].copy()
+    inferno["round_feature_id"] = "inferno_r1"
+    inferno["round_id"] = "inferno_round1"
+    inferno["map_name"] = "de_inferno"
+    pd.concat([features, inferno], ignore_index=True).to_parquet(feature_path, index=False)
+    eligible_path = tmp_path / "data/silver/parsed_demos/feature_eligible_demos.parquet"
+    eligible = pd.read_parquet(eligible_path)
+    inferno_eligible = eligible.iloc[[0]].copy()
+    inferno_eligible["parse_id"] = "inferno_parse"
+    inferno_eligible["inferred_map_name"] = "de_inferno"
+    pd.concat([eligible, inferno_eligible], ignore_index=True).to_parquet(eligible_path, index=False)
+    registry_path = tmp_path / "data/gold/maps/map_registry/map_registry.parquet"
+    registry = pd.read_parquet(registry_path)
+    pd.concat([registry, pd.DataFrame([{"map_id": "inferno", "registry_version": "v1", "region_schema_version": "v1"}])], ignore_index=True).to_parquet(registry_path, index=False)
+
+    frames, _, summary = run_mirage_regression_gate(config, force=True)
+
+    assert summary["ready_for_new_map_onboarding"] == 1
     assert frames["mirage_regression_failures"].empty
 
 

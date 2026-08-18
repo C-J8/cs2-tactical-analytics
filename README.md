@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.4 -- First New Map Onboarding: Vitality Inferno**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.5 -- Canonical Map Identity & Safe Multi-Map Parsing**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, and the first conservative new-map onboarding audit for Vitality Inferno. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, and a safe multi-map parse gate. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -34,8 +34,9 @@ Validated local snapshot for Vitality on Mirage:
 - 1 Stage 8.1 Mirage map registry with 15 physical regions and 8 semantic groups;
 - 1 Stage 8.2 map-ready feature audit with 1511 compatibility checks passing;
 - 1 Stage 8.3 Mirage regression gate with 16 datasets and 14 critical invariants passing;
-- 1 Stage 8.4 Inferno onboarding package showing 5 local Inferno demos but 0 feature-eligible Inferno demos until the map registry receives verified parser/nav area names;
-- 170 tests passing and `ruff check .` passing.
+- 1 Stage 8.4 Inferno onboarding package registering 5 local Inferno demos for Vitality;
+- 1 Stage 8.5 multi-map parsing gate showing 5 parsed Inferno demos, 5 feature-eligible Inferno demos, Mirage preservation, and `ready_for_area_discovery = true`;
+- 195 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -64,6 +65,9 @@ python -m src.features.build_feature_contract --config configs/project.yaml --fo
 python -m src.maps.build_map_registry --config configs/project.yaml --force
 python -m src.validation.mirage_regression_gate --config configs/project.yaml --force
 python -m src.maps.onboard_map --config configs/project.yaml --map Inferno --target-team Vitality --force
+python -m src.parsing.parse_demos --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+python -m src.parsing.parse_quality --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+python -m src.validation.multi_map_parse_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 ```
 
 Important dependency rules:
@@ -84,6 +88,7 @@ Important dependency rules:
 - Stage 8.2 makes Stage 4 feature engineering consume the map registry and feature contract; it keeps Mirage feature names/values stable and writes compatibility audits.
 - Stage 8.3 compares the current Mirage MVP against an explicit frozen baseline and blocks new-map onboarding on any critical regression.
 - Stage 8.4 registers Inferno and writes onboarding/readiness audits under `data/gold/maps/inferno/onboarding/`; it does not train models, scrape HLTV, or overwrite Mirage feature outputs.
+- Stage 8.5 resolves map names through canonical identity, parses explicit map/team scopes safely, preserves other maps during forced upserts, and validates readiness for future area discovery. It does not discover Inferno areas, edit Inferno semantic mappings, run Inferno feature engineering, train models, or build dashboards.
 
 ## MVP Scope
 
@@ -1555,7 +1560,85 @@ Current Stage 8.4 snapshot:
 
 Important interpretation: feature portability does not mean the Mirage model works on Inferno. It only says a feature definition is global or could be produced through the same semantic name once Inferno has verified physical region mappings.
 
-The current Inferno registry intentionally uses `named_area` placeholders marked `unresolved`. This is deliberate. No Inferno Awpy/nav area inventory is available locally yet, and the project should not invent coordinates or fake area names. The next practical step is to confirm real Inferno parser/nav place names, update `configs/maps/inferno.yaml`, then re-run parsing/quality with Inferno explicitly targeted.
+The current Inferno registry intentionally uses `named_area` placeholders marked `unresolved`. This is deliberate. No Inferno Awpy/nav area inventory is available locally yet, and the project should not invent coordinates or fake area names.
+
+## Stage 8.5 -- Canonical Map Identity & Safe Multi-Map Parsing
+
+Stage 8.5 makes map selection official and safe before the project starts area discovery for Inferno. Raw names such as `Inferno`, `inferno`, and `de_inferno` now resolve to one canonical map identity from `configs/maps/map_registry.yaml`.
+
+The canonical map identity layer lives in:
+
+```text
+src/maps/identity.py
+```
+
+The main helpers are:
+
+- `canonical_map_id`;
+- `canonical_map_name`;
+- `same_map`;
+- `resolve_map_identity`;
+- `try_resolve_map_identity`;
+- `known_map`.
+
+Scoped parsing now supports explicit map/team overrides:
+
+```bash
+python -m src.parsing.parse_demos --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+python -m src.parsing.parse_quality --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+```
+
+Safe write rules:
+
+- default parsing still follows `project.target_maps`, currently Mirage;
+- `--target-map Inferno` accepts aliases such as `Inferno`, `inferno`, and `de_inferno`;
+- scoped `--force` removes and rewrites only rows for the selected `source_parse_id` values;
+- full silver reset requires explicit `--reset-silver --force`;
+- parse manifests and parse-quality outputs are upserted by scope so Mirage rows stay preserved.
+
+The Stage 8.5 gate is:
+
+```bash
+python -m src.validation.multi_map_parse_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+```
+
+It writes:
+
+```text
+data/gold/validation/multi_map_parsing/
+docs/multi_map_parsing.md
+notebooks/19_multi_map_parsing.ipynb
+```
+
+The gate checks:
+
+- canonical map identity resolution;
+- parse-scope inventory;
+- parse-scope status;
+- scoped silver upsert safety;
+- parse-manifest preservation;
+- parse-quality preservation;
+- place-column readiness;
+- Mirage preservation;
+- final multi-map parse audit.
+
+Current Stage 8.5 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Target map | Inferno |
+| Canonical target map id | inferno |
+| Target team | Vitality |
+| Selected Inferno demos | 5 |
+| Parsed Inferno demos | 5 |
+| Feature-eligible Inferno demos | 5 |
+| Mirage feature-eligible demos preserved | 18 |
+| `place` rows available for Inferno | 10081430 |
+| ready_for_area_discovery | true |
+| critical_failures | 0 |
+| Gate status | ok |
+
+Stage 8.5 deliberately does not discover Inferno areas, edit `configs/maps/inferno.yaml` semantic mappings, run Inferno feature engineering, train models, build dashboards, or use BigQuery. The next stage should use the real Inferno `place` names from parsed data to build a verified area/semantic mapping.
 
 Validation commands:
 

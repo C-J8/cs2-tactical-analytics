@@ -21,6 +21,7 @@ from src.features.position_features import build_position_outputs, load_early_ti
 from src.features.region_mapping import choose_place_column, load_region_mapping_from_registry
 from src.features.round_context import build_round_base
 from src.features.utility_features import build_player_round_utility, build_utility_events
+from src.maps.identity import same_map
 from src.maps.semantic import legacy_feature_groups_for_registry
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
@@ -102,6 +103,7 @@ def run_feature_pipeline(
 ) -> tuple[pd.DataFrame, dict[str, Path], dict[str, int]]:
     started_at = measure_start()
     project = load_project_config(config_path)
+    project_root = config_path.resolve().parent.parent
     target_map = target_map or project.target_maps[0]
     target_team = target_team or project.target_teams[0]
     silver_dir = project.parsed_silver_dir
@@ -111,7 +113,8 @@ def run_feature_pipeline(
     if window_end is not None:
         warnings.append("--window-end is deprecated; using feature_windows from configs/project.yaml.")
 
-    registry, region_lookup, region_config = load_region_mapping_from_registry(target_map, registry_path=map_registry_path)
+    effective_registry_path = map_registry_path if map_registry_path.is_absolute() else project_root / map_registry_path
+    registry, region_lookup, region_config = load_region_mapping_from_registry(target_map, registry_path=effective_registry_path)
     feature_contract = load_feature_contract(gold_dir, feature_contract_path)
     candidate_feature_set = load_candidate_feature_set(gold_dir)
     baselines = load_compatibility_baselines(gold_dir)
@@ -121,7 +124,7 @@ def run_feature_pipeline(
     feature_eligible = read_catalog(silver_dir / "feature_eligible_demos.parquet")
     feature_eligible = feature_eligible[
         (feature_eligible["feature_eligible"] == True)  # noqa: E712
-        & (feature_eligible["inferred_map_name"] == target_map)
+        & (feature_eligible["inferred_map_name"].map(lambda value: same_map(value, target_map, registry_path=effective_registry_path)))
         & (feature_eligible["target_team"] == target_team)
     ].copy()
     if limit_demos is not None:

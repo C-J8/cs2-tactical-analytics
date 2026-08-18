@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 
 from src.utils.io import ensure_dir
 from src.utils.text import clean_string
@@ -72,11 +73,52 @@ def write_silver_tables(
     for table_name, traced in traced_tables.items():
         path = output_dir / f"{table_name}.parquet"
         if path.exists():
-            existing = pd.read_parquet(path)
-            existing = normalize_trace_columns(existing)
-            traced = pd.concat([existing, traced], ignore_index=True)
-        traced.to_parquet(path, index=False)
+            upsert_silver_table(path, traced, parse_ids={str(parse_id)})
+        else:
+            traced = deduplicate_silver_table(traced)
+            traced.to_parquet(path, index=False)
     return traced_tables
+
+
+def upsert_silver_table(path: Path, new_rows: pd.DataFrame, *, parse_ids: set[str]) -> pd.DataFrame:
+    incoming = normalize_trace_columns(ensure_dataframe(new_rows))
+    if "source_parse_id" not in incoming.columns:
+        raise ValueError(f"Cannot safely upsert silver rows without source_parse_id: {path}")
+    if path.exists():
+        schema = pl.scan_parquet(path).collect_schema()
+        if "source_parse_id" not in schema.names():
+            raise ValueError(f"Cannot safely upsert silver table without source_parse_id: {path}")
+        temp_new = path.with_suffix(".new_scope.parquet")
+        temp_out = path.with_suffix(".upsert_tmp.parquet")
+        deduplicate_silver_table(incoming).to_parquet(temp_new, index=False)
+        try:
+            pl.concat(
+                [
+                    pl.scan_parquet(path).filter(~pl.col("source_parse_id").cast(pl.Utf8).is_in(list(parse_ids))),
+                    pl.scan_parquet(temp_new),
+                ],
+                how="diagonal_relaxed",
+            ).sink_parquet(temp_out)
+            temp_out.replace(path)
+        finally:
+            if temp_new.exists():
+                temp_new.unlink()
+            if temp_out.exists():
+                temp_out.unlink()
+        return incoming
+    incoming = deduplicate_silver_table(incoming)
+    ensure_dir(path.parent)
+    incoming.to_parquet(path, index=False)
+    return incoming
+
+
+def deduplicate_silver_table(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    stable_keys = [column for column in ["source_parse_id", "round_num", "tick", "steamid", "event", "entity_id"] if column in df.columns]
+    if not stable_keys:
+        return df.drop_duplicates().reset_index(drop=True)
+    return df.drop_duplicates(subset=stable_keys, keep="last").reset_index(drop=True)
 
 
 def normalize_trace_columns(df: pd.DataFrame) -> pd.DataFrame:

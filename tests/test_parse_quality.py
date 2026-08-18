@@ -212,3 +212,49 @@ def test_dry_run_does_not_overwrite_outputs(tmp_path: Path) -> None:
 
     assert outputs == {}
     assert output_path.read_text(encoding="utf-8") == "sentinel"
+
+
+def test_parse_quality_target_map_inferno_recognizes_de_inferno(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    parse_manifest_path = tmp_path / "data/bronze/parse_manifest/parse_manifest.parquet"
+    dem_files_path = tmp_path / "data/bronze/dem_files_manifest/dem_files_manifest.parquet"
+    parse_manifest_path.parent.mkdir(parents=True)
+    dem_files_path.parent.mkdir(parents=True)
+    pd.DataFrame([_parse_row("inferno", map_name="de_inferno", rounds=13, ticks=100)]).to_parquet(parse_manifest_path, index=False)
+    pd.DataFrame([_dem_row("inferno", inferred_map_name="de_inferno")]).to_parquet(dem_files_path, index=False)
+
+    quality, feature_eligible, _, summary = run_quality_pipeline(config_path, dry_run=True, target_maps=["Inferno"], target_team="Vitality")
+
+    assert len(quality) == 1
+    assert quality.loc[0, "quality_status"] == "valid_full_map"
+    assert len(feature_eligible) == 1
+    assert summary["total_map_not_target"] == 0
+
+
+def test_scoped_parse_quality_preserves_mirage_feature_eligibility(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    parse_manifest_path = tmp_path / "data/bronze/parse_manifest/parse_manifest.parquet"
+    dem_files_path = tmp_path / "data/bronze/dem_files_manifest/dem_files_manifest.parquet"
+    parse_manifest_path.parent.mkdir(parents=True)
+    dem_files_path.parent.mkdir(parents=True)
+    pd.DataFrame([_parse_row("inferno", map_name="de_inferno", rounds=13, ticks=100)]).to_parquet(parse_manifest_path, index=False)
+    pd.DataFrame([_dem_row("inferno", inferred_map_name="de_inferno")]).to_parquet(dem_files_path, index=False)
+    existing_silver = tmp_path / "data/silver/parsed_demos"
+    existing_quality = tmp_path / "data/bronze/parse_quality"
+    existing_silver.mkdir(parents=True)
+    existing_quality.mkdir(parents=True)
+    mirage_quality = build_parse_quality(
+        pd.DataFrame([_parse_row("mirage", map_name="Mirage")]),
+        pd.DataFrame([_dem_row("mirage", inferred_map_name="Mirage")]),
+        pd.DataFrame(),
+        target_maps={"Mirage"},
+        min_rounds=12,
+    )
+    mirage_quality.to_parquet(existing_quality / "parse_quality.parquet", index=False)
+    mirage_quality.to_parquet(existing_silver / "feature_eligible_demos.parquet", index=False)
+
+    final_quality, final_feature_eligible, _, _ = run_quality_pipeline(config_path, force=True, target_maps=["Inferno"], target_team="Vitality")
+
+    assert {"mirage_awpy", "inferno_awpy"} <= set(final_quality["parse_id"])
+    assert {"mirage_awpy", "inferno_awpy"} <= set(final_feature_eligible["parse_id"])
+    assert final_quality["parse_id"].is_unique

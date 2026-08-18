@@ -13,7 +13,7 @@ Configuration files are fingerprinted in the baseline manifest.
 | dataset_name                  |   rows_baseline |   rows_current | schema_match   | row_identity_match   | value_match   | status   |
 |:------------------------------|----------------:|---------------:|:---------------|:---------------------|:--------------|:---------|
 | feature_eligible_demos        |              18 |             18 | True           | True                 | True          | ok       |
-| parse_quality                 |              55 |             55 | True           | True                 | True          | ok       |
+| parse_quality                 |              23 |             23 | True           | True                 | True          | ok       |
 | round_features_mvp            |             405 |            405 | True           | True                 | True          | ok       |
 | region_presence_by_round      |           43961 |          43961 | True           | True                 | True          | ok       |
 | utility_events                |            2336 |           2336 | True           | True                 | True          | ok       |

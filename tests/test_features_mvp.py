@@ -236,9 +236,69 @@ def test_feature_pipeline_dry_run_does_not_overwrite(tmp_path: Path) -> None:
         assert out.read_text(encoding="utf-8") == old_content
 
 
-def _write_map_ready_inputs(tmp_path: Path) -> None:
+def test_feature_pipeline_target_map_uses_canonical_identity(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+    _write_map_ready_inputs(tmp_path, include_inferno=True)
+    silver_dir = tmp_path / "data/silver/parsed_demos"
+    silver_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "parse_id": "inferno_parse",
+                "dem_file_id": "inferno_demo",
+                "series_id": "series_inferno",
+                "local_archive_id": "archive_inferno",
+                "target_team": "Vitality",
+                "opponent": "unknown",
+                "inferred_map_name": "de_inferno",
+                "feature_eligible": True,
+            }
+        ]
+    ).to_parquet(silver_dir / "feature_eligible_demos.parquet", index=False)
+    pd.DataFrame(
+        [
+            {"round_num": 1, "start": 0, "freeze_end": 100, "end": 1000, "winner": "t", "reason": "bomb_exploded", "bomb_plant": 500, "bomb_site": "bombsite_a", "map_name": "de_inferno", "source_parse_id": "inferno_parse"}
+        ]
+    ).to_parquet(silver_dir / "rounds.parquet", index=False)
+    pd.DataFrame(columns=["tick", "event", "round_num", "source_parse_id"]).to_parquet(silver_dir / "bomb.parquet", index=False)
+    pd.DataFrame(
+        {
+            "source_parse_id": ["inferno_parse"],
+            "round_num": [1],
+            "tick": [100],
+            "X": [0],
+            "Y": [0],
+            "Z": [0],
+            "side": ["t"],
+            "name": ["p1"],
+            "steamid": ["1"],
+            "place": ["Middle"],
+            "health": [100],
+            "inventory": [["Smoke Grenade"]],
+            "series_id": ["series_inferno"],
+            "target_team": ["Vitality"],
+            "map_name": ["de_inferno"],
+        }
+    ).to_parquet(silver_dir / "ticks.parquet", index=False)
+    pd.DataFrame(columns=["entity_id", "tick"]).to_parquet(silver_dir / "grenades.parquet", index=False)
+
+    _, _, summary = run_feature_pipeline(config_path, dry_run=True, target_map="Inferno", map_registry_path=tmp_path / "configs/maps/map_registry.yaml")
+
+    assert summary["rounds_generated"] == 1
+
+
+def _write_map_ready_inputs(tmp_path: Path, *, include_inferno: bool = False) -> None:
     maps_dir = tmp_path / "configs" / "maps"
     maps_dir.mkdir(parents=True, exist_ok=True)
+    inferno_entry = """
+  - map_id: inferno
+    display_name: Inferno
+    game_map_name: de_inferno
+    config_path: configs/maps/inferno.yaml
+    region_schema_version: v1
+    status: onboarding
+    is_reference_map: false
+""" if include_inferno else ""
     (maps_dir / "map_registry.yaml").write_text(
         """
 registry_version: v1
@@ -250,7 +310,7 @@ maps:
     region_schema_version: v1
     status: active
     is_reference_map: true
-""".strip(),
+""".strip() + inferno_entry,
         encoding="utf-8",
     )
     (maps_dir / "mirage.yaml").write_text(
@@ -288,6 +348,42 @@ bombsites:
 """.strip(),
         encoding="utf-8",
     )
+    if include_inferno:
+        (maps_dir / "inferno.yaml").write_text(
+            """
+map_id: inferno
+display_name: Inferno
+game_map_name: de_inferno
+region_schema_version: v1
+coordinate_system:
+  source: test
+physical_regions:
+  - region_id: mid
+    display_name: Mid
+    geometry:
+      type: named_area
+      source_region_group: MID_CONTROL
+    semantic_tags: [mid_control]
+    site_affinity: []
+    region_scope: map_specific
+    priority: 100
+    boundary_policy: existing_behavior
+    aliases: [Middle]
+    status: active
+semantic_groups:
+  mid_control:
+    description: Mid control.
+    member_regions: [mid]
+aliases:
+  mid: [Middle]
+bombsites:
+  A:
+    region_ids: [mid]
+  B:
+    region_ids: [mid]
+""".strip(),
+            encoding="utf-8",
+        )
     contract_dir = tmp_path / "data" / "gold" / "features" / "feature_contract"
     contract_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(

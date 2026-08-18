@@ -10,6 +10,7 @@ import pandas as pd
 from src.config.schemas import load_project_config
 from src.features.build_round_features import run_feature_pipeline
 from src.features.map_refactor_audit import load_candidate_feature_set, load_feature_contract
+from src.maps.identity import same_map
 from src.maps.registry import MapRegistry, load_map_registry, normalize_id, validate_map_registry
 from src.maps.semantic import resolve_feature_requirements
 from src.utils.io import ensure_dir, read_catalog
@@ -679,13 +680,8 @@ def filter_team_map(df: pd.DataFrame, *, target_team: str, registry: MapRegistry
     if "target_team" in result.columns:
         result = result[result["target_team"].astype(str).str.lower() == target_team.lower()]
     if map_column in result.columns:
-        result = result[result[map_column].map(lambda value: same_map(value, registry))]
+        result = result[result[map_column].map(lambda value: same_map(value, registry.display_name))]
     return result.copy()
-
-
-def same_map(value: object, registry: MapRegistry) -> bool:
-    normalized = normalize_id(str(value or "")).removeprefix("de_")
-    return normalized in {registry.map_id, normalize_id(registry.display_name), normalize_id(registry.game_map_name).removeprefix("de_")}
 
 
 def unique_count(df: pd.DataFrame, column: str) -> int:

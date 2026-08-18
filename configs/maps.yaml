@@ -3,3 +3,7 @@ maps:
     aliases:
       - de_mirage
       - Mirage
+  - map_name: Inferno
+    aliases:
+      - de_inferno
+      - Inferno

@@ -16,6 +16,7 @@ from src.config.schemas import load_project_config
 from src.features.build_round_features import run_feature_pipeline
 from src.features.round_state import run_round_state_pipeline
 from src.features.side_datasets import run_side_dataset_pipeline
+from src.maps.identity import canonical_map_id, same_map
 from src.parsing.parse_quality import run_quality_pipeline
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
@@ -250,6 +251,8 @@ def compare_gate(
     rerun_completed: bool,
     rerun_runtime_seconds: float | None,
 ) -> dict[str, pd.DataFrame]:
+    baseline = filter_gate_scope(baseline, target_team=target_team, target_map=target_map, project_root=project_root)
+    current = filter_gate_scope(current, target_team=target_team, target_map=target_map, project_root=project_root)
     schema = build_schema_comparison(baseline, current, strict=strict)
     row_identity = build_row_identity_comparison(baseline, current)
     feature_values = build_feature_value_comparison(baseline, current, float_atol=float_atol, float_rtol=float_rtol)
@@ -291,6 +294,42 @@ def compare_gate(
         "mirage_regression_failures": failures,
         "mirage_regression_audit": audit,
     }
+
+
+def filter_gate_scope(
+    frames: dict[str, pd.DataFrame],
+    *,
+    target_team: str,
+    target_map: str,
+    project_root: Path,
+) -> dict[str, pd.DataFrame]:
+    registry_path = project_root / "configs" / "maps" / "map_registry.yaml"
+    target_map_id = canonical_map_id(target_map, registry_path=registry_path)
+    scoped: dict[str, pd.DataFrame] = {}
+    for name, frame in frames.items():
+        scoped[name] = filter_frame_scope(frame, target_team=target_team, target_map=target_map, target_map_id=target_map_id, registry_path=registry_path)
+    return scoped
+
+
+def filter_frame_scope(
+    frame: pd.DataFrame,
+    *,
+    target_team: str,
+    target_map: str,
+    target_map_id: str,
+    registry_path: Path,
+) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    result = frame.copy()
+    if "target_team" in result.columns:
+        result = result[result["target_team"].astype(str).str.lower() == target_team.lower()].copy()
+    if "map_id" in result.columns:
+        result = result[result["map_id"].astype(str).map(lambda value: value == target_map_id)].copy()
+    map_column = next((column for column in ["map_name", "inferred_map_name", "target_map"] if column in result.columns), None)
+    if map_column:
+        result = result[result[map_column].map(lambda value: same_map(value, target_map, registry_path=registry_path))].copy()
+    return result
 
 
 def build_schema_comparison(baseline: dict[str, pd.DataFrame], current: dict[str, pd.DataFrame], *, strict: bool) -> pd.DataFrame:

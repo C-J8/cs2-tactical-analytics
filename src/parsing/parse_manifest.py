@@ -63,3 +63,23 @@ def write_parse_manifest(df: pd.DataFrame, output_dir: Path, formats: list[str])
         manifest.to_parquet(parquet_path, index=False)
         outputs["parquet"] = parquet_path
     return outputs
+
+
+def upsert_parse_manifest(df: pd.DataFrame, output_dir: Path, formats: list[str], *, parse_ids: set[str]) -> dict[str, Path]:
+    existing_path = output_dir / "parse_manifest.parquet"
+    if existing_path.exists():
+        existing = pd.read_parquet(existing_path)
+    else:
+        csv_path = output_dir / "parse_manifest.csv"
+        existing = pd.read_csv(csv_path, dtype="string", keep_default_na=False) if csv_path.exists() else empty_parse_manifest()
+    incoming = df.copy()
+    for frame in [existing, incoming]:
+        for column in PARSE_MANIFEST_COLUMNS:
+            if column not in frame.columns:
+                frame[column] = None
+    if "parse_id" not in existing.columns:
+        raise ValueError("Cannot safely upsert parse_manifest without parse_id.")
+    preserved = existing[~existing["parse_id"].astype(str).isin(parse_ids)].copy()
+    combined = pd.concat([preserved[PARSE_MANIFEST_COLUMNS], incoming[PARSE_MANIFEST_COLUMNS]], ignore_index=True)
+    combined = combined.drop_duplicates(subset=["parse_id"], keep="last").reset_index(drop=True)
+    return write_parse_manifest(combined, output_dir, formats)
