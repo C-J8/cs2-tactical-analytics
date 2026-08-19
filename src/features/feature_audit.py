@@ -20,9 +20,10 @@ def build_feature_audit(
     rounds_with_label = int(round_features["target_site_model_label"].isin(["A", "B"]).sum()) if "target_site_model_label" in round_features.columns else 0
     rounds_without_plant = int(round_features["target_site_model_label"].isna().sum()) if "target_site_model_label" in round_features.columns else 0
     notes = [
-        "target_team player identity is not available in silver ticks; early-round features use T-side players as attacking-side proxy",
+        "position features still use side-based tick evidence; utility event features use roster-filtered target-team throwers when player rosters are available",
         "tickrate assumed at 64 ticks per second",
         f"grenades.parquet detected as {diagnostics.get('grenades_granularity', 'unknown')}",
+        f"feature engine version: {diagnostics.get('feature_engine_version', 'v1')}",
         f"interval windows: {diagnostics.get('feature_windows_interval', 'unknown')}",
         f"cumulative windows: {diagnostics.get('feature_windows_cumulative', 'unknown')}",
         "position ticks are downsampled to one player observation per second for full-round window features",
@@ -44,6 +45,7 @@ def build_feature_audit(
                 "warnings_count": len(warnings),
                 "utility_parsing_status": "grenades_skipped_trajectory_level" if diagnostics.get("grenades_granularity") == "trajectory_level" else "ok",
                 "region_mapping_status": "place_name_mapping",
+                "feature_engine_version": diagnostics.get("feature_engine_version", "v1"),
                 "grenades_granularity": diagnostics.get("grenades_granularity", "unknown"),
                 "utility_events_rows": len(utility_events),
                 "region_presence_rows": len(region_presence),

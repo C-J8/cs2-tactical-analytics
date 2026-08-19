@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.config.schemas import load_project_config
+from src.config.schemas import load_project_config, load_yaml
 from src.features.feature_audit import build_feature_audit
 from src.features.feature_windows import configured_feature_windows
 from src.features.map_refactor_audit import (
@@ -19,7 +19,7 @@ from src.features.map_refactor_audit import (
 )
 from src.features.position_features import build_position_outputs, load_early_ticks
 from src.features.region_mapping import choose_place_column, load_region_mapping_from_registry
-from src.features.round_context import build_round_base
+from src.features.round_context import add_score_diff_before_round, build_round_base
 from src.features.utility_features import build_player_round_utility, build_utility_events
 from src.maps.identity import same_map
 from src.maps.semantic import legacy_feature_groups_for_registry
@@ -138,6 +138,9 @@ def run_feature_pipeline(
     round_base = build_round_base(rounds, feature_eligible, bomb)
     if not round_base.empty and "map_name" in round_base.columns:
         round_base["map_name"] = registry.display_name
+    round_state_path = gold_dir / "round_state" / "round_state_resolved.parquet"
+    existing_round_state = read_catalog(round_state_path) if round_state_path.exists() else pd.DataFrame()
+    round_base, score_audit = add_score_diff_before_round(round_base, existing_round_state, target_team=target_team)
 
     early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), round_base, windows=feature_windows)
     place_column = choose_place_column(list(early_ticks.columns), region_config)
@@ -155,17 +158,24 @@ def run_feature_pipeline(
     if not region_presence.empty and "map_name" in region_presence.columns:
         region_presence["map_name"] = registry.display_name
     player_utility, utility_start_wide = build_player_round_utility(early_ticks, round_base)
+    target_player_names = load_target_player_names(
+        project.player_rosters_path if project.player_rosters_path.is_absolute() else project_root / project.player_rosters_path,
+        target_team,
+    )
     utility_events, utility_events_wide, diagnostics = build_utility_events(
         silver_dir,
         round_base,
         windows=feature_windows,
         region_lookup=region_lookup,
         utility_region_groups=utility_region_groups,
+        target_player_names=target_player_names,
     )
     diagnostics["feature_windows_interval"] = ",".join(f"{window.start}-{window.end}" for window in feature_windows if window.window_type == "interval")
     diagnostics["feature_windows_cumulative"] = ",".join(f"{window.start}-{window.end}" for window in feature_windows if window.window_type == "cumulative")
     diagnostics["map_registry_version"] = registry.registry_version
     diagnostics["map_registry_id"] = registry.map_id
+    diagnostics["score_diff_status"] = str(score_audit.iloc[0].get("status")) if not score_audit.empty else "warning"
+    diagnostics["score_diff_method"] = str(score_audit.iloc[0].get("score_resolution_method")) if not score_audit.empty else "unknown"
     round_features = assemble_round_features(round_base, position_wide, utility_start_wide, utility_events_wide)
     new_runtime_seconds = elapsed_seconds(started_at)
     post_frames = build_post_refactor_frames(round_features=round_features, region_presence=region_presence, baselines=baselines)
@@ -205,6 +215,7 @@ def run_feature_pipeline(
                 region_presence,
                 feature_audit,
                 map_refactor_audits,
+                score_audit,
                 gold_dir=gold_dir,
                 scope=scope,
                 registry_path=effective_registry_path,
@@ -237,6 +248,28 @@ def assemble_round_features(round_base: pd.DataFrame, position_wide: pd.DataFram
     return result[ordered + extras]
 
 
+def load_target_player_names(path: Path, target_team: str) -> set[str]:
+    if not path.exists():
+        return set()
+    content = load_yaml(path)
+    for team in content.get("teams", []):
+        if str(team.get("team_name") or "").strip().casefold() != target_team.strip().casefold():
+            continue
+        names: set[str] = set()
+        for player in team.get("players", []):
+            add_normalized(names, player.get("player_name"))
+            for alias in player.get("aliases", []) or []:
+                add_normalized(names, alias)
+        return names
+    return set()
+
+
+def add_normalized(names: set[str], value: object) -> None:
+    text = str(value or "").strip().casefold()
+    if text:
+        names.add(text)
+
+
 def write_outputs(
     round_features: pd.DataFrame,
     round_base: pd.DataFrame,
@@ -245,6 +278,7 @@ def write_outputs(
     region_presence: pd.DataFrame,
     feature_audit: pd.DataFrame,
     map_refactor_audits: dict[str, pd.DataFrame],
+    score_audit: pd.DataFrame,
     *,
     gold_dir: Path,
     scope,
@@ -272,6 +306,8 @@ def write_outputs(
     audit_dir = ensure_dir(gold_dir / "feature_audit")
     audit_name = "feature_audit" if write_reference_audits else f"feature_audit_{scope.map_id}"
     outputs.update(write_frame(feature_audit, audit_dir / audit_name, csv=True, parquet=True, force=force))
+    score_audit_name = "score_before_round_audit" if write_reference_audits else f"score_before_round_audit_{scope.map_id}"
+    outputs.update(write_frame(score_audit, audit_dir / score_audit_name, csv=True, parquet=True, force=force))
     if write_reference_audits:
         for name, frame in map_refactor_audits.items():
             outputs.update(write_frame(frame, audit_dir / name, csv=True, parquet=True, force=force))

@@ -14,11 +14,11 @@ from src.utils.text import safe_slug
 
 
 UTILITY_TYPES = {
-    "smoke": ["smoke"],
-    "flash": ["flash"],
-    "molotov": ["molotov", "incendiary"],
-    "he": ["he grenade", "high explosive"],
-    "decoy": ["decoy"],
+    "smoke": ["smoke", "csmokegrenade"],
+    "flash": ["flash", "flashbang", "cflashbang"],
+    "molotov": ["molotov", "incendiary", "cmolotovgrenade", "cincendiarygrenade"],
+    "he": ["he grenade", "high explosive", "hegrenade", "chegrenade"],
+    "decoy": ["decoy", "cdecoygrenade"],
 }
 
 
@@ -113,19 +113,31 @@ def build_utility_events(
     region_lookup: dict,
     utility_region_groups: dict[str, str] | None = None,
     tickrate: float = 64.0,
+    target_player_names: set[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
     windows = windows or configured_feature_windows(FeatureWindowsConfig())
     if window_end is not None:
         windows = [FeatureWindow(0, window_end, "cumulative")]
     events = []
-    diagnostics = {"grenades_granularity": detect_grenades_granularity(silver_dir / "grenades.parquet")}
+    diagnostics = {"grenades_granularity": detect_grenades_granularity(silver_dir / "grenades.parquet"), "feature_engine_version": "v2"}
     for table_name, utility_type in [("smokes", "smoke"), ("infernos", "molotov")]:
         path = silver_dir / f"{table_name}.parquet"
         if not path.exists() or round_base.empty:
             continue
         source = pd.read_parquet(path)
-        table_events = events_from_table(source, round_base, utility_type=utility_type, source_table=table_name, region_lookup=region_lookup, tickrate=tickrate, windows=windows)
+        table_events = events_from_table(source, round_base, utility_type=utility_type, source_table=table_name, region_lookup=region_lookup, tickrate=tickrate, windows=windows, target_player_names=target_player_names)
         events.append(table_events)
+    grenade_events = events_from_grenade_trajectories(
+        silver_dir / "grenades.parquet",
+        round_base,
+        utility_types={"flash", "he"},
+        region_lookup=region_lookup,
+        tickrate=tickrate,
+        windows=windows,
+        target_player_names=target_player_names,
+    )
+    if not grenade_events.empty:
+        events.append(grenade_events)
     utility_events = pd.concat(events, ignore_index=True) if events else empty_utility_events()
     aggregates = build_utility_event_aggregates(utility_events, round_base, windows, utility_region_groups=utility_region_groups)
     return utility_events, aggregates, diagnostics
@@ -141,6 +153,7 @@ def events_from_table(
     tickrate: float,
     windows: list[FeatureWindow] | None = None,
     window_end: int | None = None,
+    target_player_names: set[str] | None = None,
 ) -> pd.DataFrame:
     if source.empty:
         return empty_utility_events()
@@ -181,13 +194,24 @@ def events_from_table(
         (merged["seconds_from_freeze_end"] >= 0)
         & (merged["seconds_from_freeze_end"] <= max_window_end(windows))
         & (merged["event_tick"] <= merged["round_end_tick"])
-        & (merged.get("thrower_side") == "t")
     ].copy()
     if merged.empty:
         return empty_utility_events()
+    if not target_player_names:
+        merged = merged[merged.get("thrower_side", pd.Series(index=merged.index, dtype=object)).astype(str).str.casefold().eq("t")].copy()
+        if merged.empty:
+            return empty_utility_events()
     merged = add_region_columns(merged, place_column="thrower_place" if "thrower_place" in merged.columns else None, lookup=region_lookup, prefix="throw_")
+    if target_player_names:
+        merged = merged[merged.get("thrower_name", pd.Series(dtype=object)).map(lambda value: normalize_player_name(value) in target_player_names)].copy()
+    if merged.empty:
+        return empty_utility_events()
+    merged["throw_place"] = merged.get("thrower_place")
+    merged["end_place"] = None
     merged["end_region_name"] = "UNKNOWN"
     merged["end_region_group"] = "UNKNOWN"
+    merged["endpoint_resolution_method"] = "unresolved"
+    merged["endpoint_resolution_confidence"] = "none"
     merged["utility_type"] = utility_type
     merged["source_table"] = source_table
     merged["source_granularity"] = "event_level"
@@ -213,13 +237,18 @@ def events_from_table(
             "thrower_Z",
             "throw_region_name",
             "throw_region_group",
+            "throw_place",
             "X",
             "Y",
             "Z",
+            "end_place",
             "end_region_name",
             "end_region_group",
             "source_table",
             "source_granularity",
+            "entity_id",
+            "endpoint_resolution_method",
+            "endpoint_resolution_confidence",
         ]
     ].rename(
         columns={
@@ -233,8 +262,137 @@ def events_from_table(
             "X": "end_x",
             "Y": "end_y",
             "Z": "end_z",
+            "entity_id": "source_entity_id",
         }
     )
+
+
+def events_from_grenade_trajectories(
+    path: Path,
+    round_base: pd.DataFrame,
+    *,
+    utility_types: set[str],
+    region_lookup: dict,
+    tickrate: float,
+    windows: list[FeatureWindow] | None = None,
+    target_player_names: set[str] | None = None,
+) -> pd.DataFrame:
+    if not path.exists() or round_base.empty:
+        return empty_utility_events()
+    windows = windows or configured_feature_windows(FeatureWindowsConfig())
+    parse_ids = round_base.get("parse_id", pd.Series(dtype=str)).dropna().astype(str).unique().tolist()
+    if not parse_ids:
+        return empty_utility_events()
+    scan = pl.scan_parquet(path)
+    schema = scan.collect_schema()
+    required = {"source_parse_id", "round_num", "entity_id", "grenade_type", "tick"}
+    if not required.issubset(set(schema.names())):
+        return empty_utility_events()
+    type_expr = canonical_utility_type_expr(pl.col("grenade_type"))
+    grouped = (
+        scan.filter(pl.col("source_parse_id").cast(pl.Utf8).is_in(parse_ids))
+        .with_columns(type_expr.alias("utility_type"))
+        .filter(pl.col("utility_type").is_in(sorted(utility_types)))
+        .sort(["source_parse_id", "round_num", "entity_id", "tick"])
+        .group_by(["source_parse_id", "round_num", "entity_id", "grenade_type", "utility_type"])
+        .agg(
+            pl.col("tick").min().alias("event_tick"),
+            pl.col("tick").max().alias("end_tick"),
+            pl.col("thrower").first().alias("player_name"),
+            pl.col("thrower_steamid").first().alias("player_steamid"),
+            pl.col("X").first().alias("throw_x"),
+            pl.col("Y").first().alias("throw_y"),
+            pl.col("Z").first().alias("throw_z"),
+            pl.col("X").last().alias("end_x"),
+            pl.col("Y").last().alias("end_y"),
+            pl.col("Z").last().alias("end_z"),
+        )
+    )
+    source = grouped.collect().to_pandas()
+    if source.empty:
+        return empty_utility_events()
+    source["source_table"] = "grenades"
+    source["source_granularity"] = "trajectory_level"
+    source["source_entity_id"] = source["entity_id"]
+    source["throw_place"] = None
+    source["end_place"] = None
+    source["throw_region_name"] = "UNKNOWN"
+    source["throw_region_group"] = "UNKNOWN"
+    source["end_region_name"] = "UNKNOWN"
+    source["end_region_group"] = "UNKNOWN"
+    source["endpoint_resolution_method"] = "unresolved"
+    source["endpoint_resolution_confidence"] = "none"
+    merged = source.merge(
+        round_base[
+            [
+                column
+                for column in [
+                    "round_feature_id",
+                    "round_id",
+                    "parse_id",
+                    "series_id",
+                    "target_team",
+                    "round_num",
+                    "freeze_end_tick",
+                    "round_start_tick",
+                    "round_end_tick",
+                ]
+                if column in round_base.columns
+            ]
+        ],
+        left_on=["source_parse_id", "round_num"],
+        right_on=["parse_id", "round_num"],
+        how="inner",
+    )
+    if merged.empty:
+        return empty_utility_events()
+    if target_player_names:
+        merged = merged[merged["player_name"].map(lambda value: normalize_player_name(value) in target_player_names)].copy()
+    if merged.empty:
+        return empty_utility_events()
+    merged["anchor_tick"] = merged["freeze_end_tick"].fillna(merged["round_start_tick"])
+    if "round_end_tick" not in merged.columns:
+        merged["round_end_tick"] = merged["anchor_tick"] + (max_window_end(windows) * tickrate)
+    merged["seconds_from_freeze_end"] = (merged["event_tick"] - merged["anchor_tick"]) / tickrate
+    merged = merged[
+        (merged["seconds_from_freeze_end"] >= 0)
+        & (merged["seconds_from_freeze_end"] <= max_window_end(windows))
+        & (merged["event_tick"] <= merged["round_end_tick"])
+    ].copy()
+    if merged.empty:
+        return empty_utility_events()
+    merged["utility_event_id"] = merged.apply(lambda row: safe_slug(f"{row['round_feature_id']}_grenades_{row.get('source_entity_id')}_{row.get('utility_type')}_{row.get('event_tick')}", fallback="utility_event"), axis=1)
+    return merged[empty_utility_events().columns]
+
+
+def canonical_utility_type(value: object) -> str | None:
+    normalized = str(value or "").strip().lower().replace("_", " ").replace("-", " ")
+    compact = normalized.replace(" ", "")
+    for utility_type, needles in UTILITY_TYPES.items():
+        if any(needle.replace(" ", "") in compact or needle in normalized for needle in needles):
+            return utility_type
+    return None
+
+
+def canonical_utility_type_expr(expr: pl.Expr) -> pl.Expr:
+    lowered = expr.cast(pl.Utf8).str.to_lowercase()
+    return (
+        pl.when(lowered.str.contains("flash"))
+        .then(pl.lit("flash"))
+        .when(lowered.str.contains("hegrenade") | lowered.str.contains("high explosive"))
+        .then(pl.lit("he"))
+        .when(lowered.str.contains("smoke"))
+        .then(pl.lit("smoke"))
+        .when(lowered.str.contains("molotov") | lowered.str.contains("incendiary"))
+        .then(pl.lit("molotov"))
+        .when(lowered.str.contains("decoy"))
+        .then(pl.lit("decoy"))
+        .otherwise(None)
+    )
+
+
+def normalize_player_name(value: object) -> str:
+    return str(value or "").strip().casefold()
 
 
 def detect_grenades_granularity(path: Path) -> str:
@@ -261,8 +419,8 @@ def build_utility_event_aggregates(
         {
             "smokes_used_0_20": 0,
             "molotovs_used_0_20": 0,
-            "flashes_used_0_20": None,
-            "he_used_0_20": None,
+            "flashes_used_0_20": 0,
+            "he_used_0_20": 0,
             "total_utility_used_0_20": 0,
             "smokes_to_mid_control_0_20": 0,
             "smokes_to_a_pressure_0_20": 0,
@@ -312,8 +470,8 @@ def utility_aggregate_defaults(windows: list[FeatureWindow], *, utility_region_g
         suffix = feature_window.suffix
         defaults[f"smokes_used_{suffix}"] = 0
         defaults[f"molotovs_used_{suffix}"] = 0
-        defaults[f"flashes_used_{suffix}"] = None
-        defaults[f"he_used_{suffix}"] = None
+        defaults[f"flashes_used_{suffix}"] = 0
+        defaults[f"he_used_{suffix}"] = 0
         defaults[f"total_utility_used_{suffix}"] = 0
         for region_suffix in utility_region_groups.values():
             defaults[f"smokes_to_{region_suffix}_{suffix}"] = 0
@@ -331,8 +489,12 @@ def add_utility_counts(
     utility_region_groups = utility_region_groups or {"MID_CONTROL": "mid_control", "A_PRESSURE": "a_pressure", "B_PRESSURE": "b_pressure"}
     smokes = events[events["utility_type"] == "smoke"]
     molotovs = events[events["utility_type"] == "molotov"]
+    flashes = events[events["utility_type"] == "flash"]
+    he = events[events["utility_type"] == "he"]
     row[f"smokes_used_{suffix}"] = len(smokes)
     row[f"molotovs_used_{suffix}"] = len(molotovs)
+    row[f"flashes_used_{suffix}"] = len(flashes)
+    row[f"he_used_{suffix}"] = len(he)
     row[f"total_utility_used_{suffix}"] = len(events)
     for group, region_suffix in utility_region_groups.items():
         row[f"smokes_to_{region_suffix}_{suffix}"] = int((smokes["end_region_group"] == group).sum())
@@ -388,12 +550,17 @@ def empty_utility_events() -> pd.DataFrame:
             "throw_z",
             "throw_region_name",
             "throw_region_group",
+            "throw_place",
             "end_x",
             "end_y",
             "end_z",
+            "end_place",
             "end_region_name",
             "end_region_group",
             "source_table",
             "source_granularity",
+            "source_entity_id",
+            "endpoint_resolution_method",
+            "endpoint_resolution_confidence",
         ]
     )

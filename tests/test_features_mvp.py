@@ -9,8 +9,16 @@ from src.features.feature_audit import build_feature_audit
 from src.features.feature_windows import FeatureWindow
 from src.features.position_features import build_position_outputs
 from src.features.region_mapping import build_place_lookup, map_place_to_region
-from src.features.round_context import build_round_base
-from src.features.utility_features import build_player_round_utility, count_inventory, detect_grenades_granularity, events_from_table
+from src.features.round_context import add_score_diff_before_round, build_round_base
+from src.features.utility_features import (
+    build_player_round_utility,
+    build_utility_event_aggregates,
+    canonical_utility_type,
+    count_inventory,
+    detect_grenades_granularity,
+    events_from_grenade_trajectories,
+    events_from_table,
+)
 
 
 def _write_config(tmp_path: Path) -> Path:
@@ -131,6 +139,11 @@ def test_count_initial_utility_from_inventory() -> None:
     assert counts == {"smoke": 1, "flash": 1, "molotov": 1, "he": 1, "decoy": 0}
 
 
+def test_canonical_utility_type_handles_awpy_grenade_names() -> None:
+    assert canonical_utility_type("CFlashbang") == "flash"
+    assert canonical_utility_type("CHEGrenade") == "he"
+
+
 def test_player_round_utility_aggregates_inventory() -> None:
     base = build_round_base(_rounds().head(1), _feature_eligible())
     ticks = pd.DataFrame(
@@ -176,6 +189,52 @@ def test_utility_events_after_round_end_are_excluded() -> None:
     smoke_events = events_from_table(source, base, utility_type="smoke", source_table="smokes", region_lookup=lookup, tickrate=64, windows=[FeatureWindow(0, 115, "cumulative")])
 
     assert smoke_events.empty
+
+
+def test_grenade_trajectories_collapse_to_flash_and_he_events(tmp_path: Path) -> None:
+    base = build_round_base(_rounds().head(1), _feature_eligible())
+    path = tmp_path / "grenades.parquet"
+    pd.DataFrame(
+        [
+            {"source_parse_id": "parse1", "round_num": 1, "entity_id": 10, "grenade_type": "CFlashbang", "tick": 120, "thrower": "ZywOo", "thrower_steamid": 1, "X": 1.0, "Y": 2.0, "Z": 3.0},
+            {"source_parse_id": "parse1", "round_num": 1, "entity_id": 10, "grenade_type": "CFlashbang", "tick": 122, "thrower": "ZywOo", "thrower_steamid": 1, "X": 4.0, "Y": 5.0, "Z": 6.0},
+            {"source_parse_id": "parse1", "round_num": 1, "entity_id": 11, "grenade_type": "CHEGrenade", "tick": 150, "thrower": "apEX", "thrower_steamid": 2, "X": 1.0, "Y": 2.0, "Z": 3.0},
+            {"source_parse_id": "parse1", "round_num": 1, "entity_id": 12, "grenade_type": "CSmokeGrenade", "tick": 160, "thrower": "apEX", "thrower_steamid": 2, "X": 1.0, "Y": 2.0, "Z": 3.0},
+        ]
+    ).to_parquet(path, index=False)
+
+    events = events_from_grenade_trajectories(
+        path,
+        base,
+        utility_types={"flash", "he"},
+        region_lookup={},
+        tickrate=64,
+        windows=[FeatureWindow(0, 20, "cumulative")],
+        target_player_names={"zywoo", "apex"},
+    )
+    aggregates = build_utility_event_aggregates(events, base, [FeatureWindow(0, 20, "cumulative")])
+
+    assert len(events) == 2
+    assert set(events["utility_type"]) == {"flash", "he"}
+    assert events.loc[events["source_entity_id"].eq(10), "event_tick"].iloc[0] == 120
+    assert aggregates.loc[0, "flashes_used_0_20"] == 1
+    assert aggregates.loc[0, "he_used_0_20"] == 1
+
+
+def test_score_diff_before_round_uses_previous_rounds_only() -> None:
+    base = build_round_base(_rounds(), _feature_eligible())
+    state = pd.DataFrame(
+        [
+            {"parse_id": "parse1", "round_num": 1, "target_team_side": "T", "winner_team": "Vitality", "winner_side": "T"},
+            {"parse_id": "parse1", "round_num": 2, "target_team_side": "CT", "winner_team": "unknown", "winner_side": "T", "opponent": "unknown"},
+        ]
+    )
+
+    scored, audit = add_score_diff_before_round(base, state, target_team="Vitality")
+
+    assert scored.loc[scored["round_num"].eq(1), "score_diff_before_round"].iloc[0] == 0
+    assert scored.loc[scored["round_num"].eq(2), "score_diff_before_round"].iloc[0] == 1
+    assert audit.loc[0, "score_diff_missing"] == 0
 
 
 def test_short_round_only_populates_available_windows() -> None:

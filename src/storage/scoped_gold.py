@@ -232,9 +232,12 @@ def schema_is_compatible(existing: pd.DataFrame, incoming: pd.DataFrame, *, stri
     if list(existing.columns) == list(incoming.columns):
         return True, "Schema exact match."
     if set(existing.columns) != set(incoming.columns):
-        return False, f"Columns differ. missing_from_incoming={sorted(set(existing.columns)-set(incoming.columns))}; extra_in_incoming={sorted(set(incoming.columns)-set(existing.columns))}"
-    if strict:
-        return False, "Column set matches, but column order differs."
+        return (
+            True,
+            "Schema evolved; columns will be unioned. "
+            f"missing_from_incoming={sorted(set(existing.columns)-set(incoming.columns))}; "
+            f"extra_in_incoming={sorted(set(incoming.columns)-set(existing.columns))}",
+        )
     return True, "Column set matches; order normalized."
 
 

@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.9 -- Inferno Feature Quality & Tactical Readiness Gate**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.9.1 -- Feature Materialization Repair & Quality Gate Recovery**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, and a read-only Inferno feature-quality gate. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, a read-only Inferno feature-quality gate, and a feature-materialization repair stage that restores flash/HE/score features without relaxing quality thresholds. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -16,10 +16,10 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 
 - 18 feature-eligible demos;
 - 527 parsed rounds in consolidated `round_features_mvp`: 405 Mirage and 122 Inferno;
-- 180 resolved T-side rounds;
-- 225 resolved CT-side rounds;
-- 98 high-confidence planted T-side rounds: 72 plant A and 26 plant B;
-- 82 T-side rounds without a valid Vitality plant;
+- 245 resolved T-side rounds: 180 Mirage and 65 Inferno;
+- 282 resolved CT-side rounds: 225 Mirage and 57 Inferno;
+- 138 high-confidence planted T-side rounds: 94 plant A and 44 plant B;
+- 107 T-side rounds without a valid Vitality plant;
 - interval and cumulative feature windows through 115 seconds;
 - 11 Stage 5 analytical tables generated in CSV and Parquet;
 - 10 Stage 5.1 findings tables plus a generated Markdown report;
@@ -39,8 +39,9 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 - 1 Stage 8.6 area discovery package with 23 Mirage places, 24 Inferno places, real coordinate/coverage/stability profiles, Mirage crosswalk coverage of 100% of observed ticks, and Inferno `ready_for_region_mapping = true`;
 - 1 Stage 8.7 Inferno region-mapping package with 24 mapped raw places, 21 active physical regions, 4 frozen map-abstract semantics resolved, 31 candidate features audited for portability, and Mirage regression green after Feature Contract v2 metadata;
 - 1 Stage 8.8 Inferno feature pipeline run with 122 Inferno rounds, 65 Inferno T-side rounds, 57 Inferno CT-side rounds, 40 high-confidence Inferno planted T-side rounds, a passing multi-map Gold gate, and `ready_for_inferno_feature_quality_gate = true`;
-- 1 Stage 8.9 Inferno feature-quality gate with 122 scoped Inferno rounds, 477 evaluated features, 4/4 required semantics healthy, 0 dataset-reconciliation failures, 0 domain failures, 0 temporal failures, 0 label conflicts, 45 unexpected missingness blockers, 165 warnings, `ready_for_multi_map_eda = false`, and `modeling_readiness_level = exploratory_only`;
-- 230 tests passing and `ruff check .` passing.
+- 1 Stage 8.9 Inferno feature-quality gate with 122 scoped Inferno rounds, 477 evaluated features, 4/4 required semantics healthy, 0 dataset-reconciliation failures, 0 domain failures, 0 temporal failures, 0 label conflicts, 0 unexpected missingness blockers, 166 warnings, `ready_for_multi_map_eda = true`, and `modeling_readiness_level = exploratory_only`;
+- 1 Stage 8.9.1 feature-materialization repair with flash and HE usage rebuilt from `grenades.parquet`, `score_diff_before_round` filled for all scoped Inferno rounds, explicit unresolved endpoint metadata, 0 failed repair checks, and the Inferno quality gate recovered to `status = passed`;
+- 234 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -78,6 +79,7 @@ python -m src.maps.build_region_mapping --config configs/project.yaml --map Infe
 python -m src.features.run_map_pipeline --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.validation.multi_map_gold_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.validation.map_feature_quality_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+python -m src.validation.feature_materialization_repair --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 ```
 
 Important dependency rules:
@@ -103,6 +105,7 @@ Important dependency rules:
 - Stage 8.7 maps Inferno raw parser places into verified physical regions and tactical semantic groups, updates Inferno registry status to active, and adds Feature Contract v2 comparability metadata. It does not run Inferno feature engineering, round state, T-side datasets, ML, dashboards, or BigQuery.
 - Stage 8.8 runs the scoped Inferno feature pipeline and writes consolidated multi-map Gold tables while preserving Mirage rows. It does not run EDA, train models, apply Mirage models to Inferno, build dashboards, or export to BigQuery.
 - Stage 8.9 reads the scoped Gold outputs from Stage 8.8 and writes only validation outputs. It checks integrity, missingness, domains, degeneracy, semantic health, labels, sample size, cross-map sanity, read-only fingerprints, and Mirage regression status. It does not rebuild features, change mappings, train models, produce predictions, or make tactical conclusions.
+- Stage 8.9.1 repairs upstream feature materialization defects found by Stage 8.9: flash/HE utility usage, score before round, and explicit utility endpoint capability metadata. It does not relax quality thresholds, train models, produce tactical conclusions, change map mappings, build dashboards, or export to BigQuery.
 
 ## MVP Scope
 
@@ -1962,26 +1965,98 @@ Current Stage 8.9 snapshot:
 | A labels | 22 |
 | B labels | 18 |
 | Features evaluated | 477 |
-| All-null features | 46 |
+| All-null features | 1 |
 | Constant features | 144 |
-| Near-constant features | 152 |
+| Near-constant features | 153 |
 | All-zero features | 134 |
-| Unexpected missing features | 45 |
+| Unexpected missing features | 0 |
 | Invalid domain features | 0 |
 | Required semantics healthy | 4 / 4 |
 | Temporal failures | 0 |
 | Dataset reconciliation failures | 0 |
 | Label conflicts | 0 |
-| Comparable features checked | 409 |
+| Comparable features checked | 454 |
 | Cross-map structural mismatch warnings | 7 |
-| Critical failures | 45 |
-| Warnings | 165 |
+| Critical failures | 0 |
+| Warnings | 166 |
 | Mirage regression passed | true |
-| ready_for_multi_map_eda | false |
-| ready_for_inferno_modeling_experiment | false |
+| ready_for_multi_map_eda | true |
+| ready_for_inferno_modeling_experiment | true |
 | modeling_readiness_level | exploratory_only |
 
-Interpretation: Stage 8.9 itself runs and produces the required audit layer, but the current Inferno feature-quality gate is intentionally `failed` because several utility-count features, especially `flashes_used_*` and `he_used_*`, are fully missing in the Inferno scope. The A/B sample is classified as exploratory-only by sample-size thresholds, not baseline-ready or robust-ready.
+Interpretation: after Stage 8.9.1, the Inferno feature-quality gate passes for multi-map EDA. The A/B sample is still classified as exploratory-only by sample-size thresholds, not baseline-ready or robust-ready.
+
+## Stage 8.9.1 -- Feature Materialization Repair & Quality Gate Recovery
+
+Stage 8.9.1 fixes real upstream materialization defects surfaced by Stage 8.9 without lowering thresholds or changing tactical semantics.
+
+Run the repair validation after rebuilding the affected feature scopes:
+
+```bash
+python -m src.features.build_round_features --config configs/project.yaml --target-map Mirage --force
+python -m src.features.round_state --config configs/project.yaml --target-map Mirage --force
+python -m src.features.side_datasets --config configs/project.yaml --target-map Mirage --force
+python -m src.features.build_round_features --config configs/project.yaml --target-map Inferno --force
+python -m src.features.round_state --config configs/project.yaml --target-map Inferno --force
+python -m src.features.side_datasets --config configs/project.yaml --target-map Inferno --force
+python -m src.validation.map_feature_quality_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+python -m src.validation.feature_materialization_repair --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+```
+
+What changed:
+
+- `build_utility_events` now materializes flash and HE events from real `grenades.parquet` trajectories by collapsing trajectory rows into one logical event per source entity.
+- Smoke and molotov/incendiary events still prefer the dedicated event-level `smokes.parquet` and `infernos.parquet` tables.
+- Utility events expose a canonical adapter schema with source table, source granularity, source entity id, throw coordinates, endpoint coordinates, and explicit endpoint resolution metadata.
+- Endpoint region fields remain `UNKNOWN`/`unresolved` unless deterministic endpoint evidence is available. Stage 8.9.1 does not invent nearest-player, centroid, or bounding-box endpoint heuristics.
+- `score_diff_before_round` is filled from previous-round winners using `round_state_resolved`, reset by `parse_id`, with no halftime/OT reset and no current-round leakage.
+- Mirage mid-control structural mismatch warnings remain review-only. No map-region mapping was changed.
+- Gold scoped upserts now tolerate intentional schema evolution by unioning columns while preserving other map/team scopes.
+
+Stage 8.9.1 outputs:
+
+```text
+data/gold/validation/feature_materialization_repair/utility_source_capability.{csv,parquet}
+data/gold/validation/feature_materialization_repair/utility_source_policy_audit.{csv,parquet}
+data/gold/validation/feature_materialization_repair/utility_event_reconstruction_audit.{csv,parquet}
+data/gold/validation/feature_materialization_repair/utility_endpoint_resolution_audit.{csv,parquet}
+data/gold/validation/feature_materialization_repair/score_before_round_audit.{csv,parquet}
+data/gold/validation/feature_materialization_repair/feature_materialization_change_manifest.{csv,parquet}
+data/gold/validation/feature_materialization_repair/mirage_feature_migration_diff.{csv,parquet}
+data/gold/validation/feature_materialization_repair/feature_materialization_repair_audit.{csv,parquet}
+data/gold/validation/feature_materialization_repair/utility_type_feature_sanity.{csv,parquet}
+data/gold/validation/feature_materialization_repair/mid_control_structural_review.{csv,parquet}
+data/gold/validation/feature_materialization_repair/feature_materialization_capabilities.{csv,parquet}
+data/gold/validation/feature_materialization_repair/quality_gate_recovery.{csv,parquet}
+data/gold/validation/feature_materialization_repair/feature_materialization_repair_final_audit.{csv,parquet}
+```
+
+Current Stage 8.9.1 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Repair status | passed |
+| Failed repair checks | 0 |
+| Warning checks | 1 |
+| Inferno quality gate status | passed |
+| Inferno flash feature columns | 22 |
+| Inferno flash feature missing cells | 0 |
+| Inferno HE feature columns | 22 |
+| Inferno HE feature missing cells | 0 |
+| Inferno `score_diff_before_round` missing rows | 0 |
+| Inferno utility events | 1,436 |
+| Inferno flash events | 437 |
+| Inferno HE events | 283 |
+| Inferno smoke events | 366 |
+| Inferno molotov events | 350 |
+| ready_for_stage_8_10 | true |
+
+Docs/notebook:
+
+```text
+docs/feature_materialization_repair.md
+notebooks/24_feature_materialization_repair.ipynb
+```
 
 Next stage, only if `ready_for_multi_map_eda = true`:
 
