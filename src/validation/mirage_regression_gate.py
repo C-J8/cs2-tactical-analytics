@@ -317,6 +317,11 @@ def filter_gate_scope(
     scoped: dict[str, pd.DataFrame] = {}
     for name, frame in frames.items():
         scoped[name] = filter_frame_scope(frame, target_team=target_team, target_map=target_map, target_map_id=target_map_id, registry_path=registry_path)
+    feature_ids = set(scoped.get("round_features_mvp", pd.DataFrame()).get("round_feature_id", pd.Series(dtype=str)).dropna().astype(str))
+    for name in ["utility_events"]:
+        frame = scoped.get(name, pd.DataFrame())
+        if not frame.empty and "round_feature_id" in frame.columns and feature_ids:
+            scoped[name] = frame[frame["round_feature_id"].astype(str).isin(feature_ids)].copy()
     return scoped
 
 

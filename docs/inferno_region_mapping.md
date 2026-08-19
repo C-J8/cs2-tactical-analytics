@@ -4,9 +4,9 @@
 Formalize Inferno parser places into auditable physical regions and tactical semantic groups before running Inferno features.
 
 ## Stage 8.6 Evidence
-|   observed_places |   observed_ticks |   mapped_places |   mapped_tick_share | stage_8_6_ready   | ready_for_inferno_feature_run   | status   |
-|------------------:|-----------------:|----------------:|--------------------:|:------------------|:--------------------------------|:---------|
-|                24 |         10080330 |              24 |                   1 | True              | True                            | ok       |
+|   observed_places |   source_ticks |   valid_named_place_ticks |   blank_place_ticks |   mapped_ticks |   mapped_share_of_valid_named_place_ticks |   mapped_share_of_all_ticks | stage_8_6_ready   | ready_for_inferno_feature_run   | status   |
+|------------------:|---------------:|--------------------------:|--------------------:|---------------:|------------------------------------------:|----------------------------:|:------------------|:--------------------------------|:---------|
+|                24 |       10081430 |                  10080330 |                1100 |       10080330 |                                         1 |                    0.999891 | True              | True                            | ok       |
 
 ## Raw Parser Places
 | raw_place   |   tick_count |   demo_count |   round_count |   x_median |   y_median |   z_median |
@@ -37,40 +37,40 @@ Formalize Inferno parser places into auditable physical regions and tactical sem
 | Kitchen     |         4663 |            5 |            20 |   -199.773 |   252.272  |  192.031   |
 
 ## Physical Region Mapping
-| raw_place   | proposed_region_id   | mapping_type   | mapping_confidence   | semantic_tags            | review_status   |
-|:------------|:---------------------|:---------------|:---------------------|:-------------------------|:----------------|
-| Banana      | banana               | direct         | high                 | b_pressure               | accepted        |
-| BombsiteB   | bombsiteb            | direct         | high                 | site_b                   | accepted        |
-| CTSpawn     | ctspawn              | direct         | high                 | ct_space                 | accepted        |
-| BombsiteA   | bombsitea            | direct         | high                 | site_a                   | accepted        |
-| TSpawn      | tspawn               | direct         | high                 | t_spawn_area             | accepted        |
-| Middle      | middle               | direct         | high                 | mid_control              | accepted        |
-| Apartments  | apartments           | direct         | high                 | a_pressure               | accepted        |
-| TopofMid    | topofmid             | direct         | high                 | mid_control              | accepted        |
-| Ruins       | ruins                | direct         | high                 | b_pressure               | accepted        |
-| Pit         | pit                  | direct         | high                 | a_pressure               | accepted        |
-| Arch        | arch                 | direct         | high                 | ct_space|rotation        | accepted        |
-| TRamp       | tramp                | direct         | high                 | t_spawn_area|mid_control | accepted        |
-| SecondMid   | secondmid            | direct         | high                 | mid_control              | accepted        |
-| LowerMid    | lowermid             | direct         | high                 | mid_control              | accepted        |
-| Balcony     | balcony              | direct         | high                 | a_pressure               | accepted        |
-| Library     | library              | direct         | high                 | ct_space|rotation        | accepted        |
-| Quad        | quad                 | direct         | high                 | a_pressure               | accepted        |
-| BackAlley   | backalley            | direct         | high                 | a_pressure               | accepted        |
-| Underpass   | underpass            | direct         | high                 | mid_control|rotation     | accepted        |
-| Bridge      | second_mid_upper     | grouped        | medium               | mid_control|rotation     | accepted        |
-| Upstairs    | second_mid_upper     | grouped        | medium               | mid_control|rotation     | accepted        |
-| Deck        | second_mid_upper     | grouped        | medium               | mid_control|rotation     | accepted        |
-| Graveyard   | graveyard            | direct         | high                 | a_pressure               | accepted        |
-| Kitchen     | second_mid_upper     | grouped        | medium               | mid_control|rotation     | accepted        |
+| raw_place   | proposed_region_id   | mapping_type   | mapping_confidence   | semantic_tags            | review_status                     |
+|:------------|:---------------------|:---------------|:---------------------|:-------------------------|:----------------------------------|
+| Banana      | banana               | direct         | high                 | b_pressure               | accepted_from_parser_place        |
+| BombsiteB   | bombsiteb            | direct         | high                 | site_b                   | accepted_from_parser_place        |
+| CTSpawn     | ctspawn              | direct         | high                 | ct_space                 | accepted_from_parser_place        |
+| BombsiteA   | bombsitea            | direct         | high                 | site_a                   | accepted_from_parser_place        |
+| TSpawn      | tspawn               | direct         | high                 | t_spawn_area             | accepted_from_parser_place        |
+| Middle      | middle               | direct         | high                 | mid_control              | accepted_from_parser_place        |
+| Apartments  | apartments           | direct         | high                 | a_pressure               | accepted_from_parser_place        |
+| TopofMid    | topofmid             | direct         | high                 | mid_control              | accepted_from_parser_place        |
+| Ruins       | ruins                | direct         | high                 | b_pressure               | accepted_from_parser_place        |
+| Pit         | pit                  | direct         | high                 | a_pressure               | accepted_from_parser_place        |
+| Arch        | arch                 | direct         | high                 | ct_space|rotation        | accepted_from_parser_place        |
+| TRamp       | tramp                | direct         | high                 | t_spawn_area|mid_control | accepted_from_parser_place        |
+| SecondMid   | secondmid            | direct         | high                 | mid_control              | accepted_from_parser_place        |
+| LowerMid    | lowermid             | direct         | high                 | mid_control              | accepted_from_parser_place        |
+| Balcony     | balcony              | direct         | high                 | a_pressure               | accepted_from_parser_place        |
+| Library     | library              | direct         | high                 | ct_space|rotation        | accepted_from_parser_place        |
+| Quad        | quad                 | direct         | high                 | a_pressure               | accepted_from_parser_place        |
+| BackAlley   | backalley            | direct         | high                 | a_pressure               | accepted_from_parser_place        |
+| Underpass   | underpass            | direct         | high                 | mid_control|rotation     | accepted_from_parser_place        |
+| Bridge      | second_mid_upper     | grouped        | medium               | mid_control|rotation     | accepted_from_coordinate_evidence |
+| Upstairs    | second_mid_upper     | grouped        | medium               | mid_control|rotation     | accepted_from_coordinate_evidence |
+| Deck        | second_mid_upper     | grouped        | medium               | mid_control|rotation     | accepted_from_coordinate_evidence |
+| Graveyard   | graveyard            | direct         | high                 | a_pressure               | accepted_from_parser_place        |
+| Kitchen     | second_mid_upper     | grouped        | medium               | mid_control|rotation     | accepted_from_coordinate_evidence |
 
 ## Grouped Places
-| raw_place   | proposed_region_id   | semantic_tags        | notes                                                                             |
-|:------------|:---------------------|:---------------------|:----------------------------------------------------------------------------------|
-| Bridge      | second_mid_upper     | mid_control|rotation | Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence. |
-| Upstairs    | second_mid_upper     | mid_control|rotation | Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence. |
-| Deck        | second_mid_upper     | mid_control|rotation | Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence. |
-| Kitchen     | second_mid_upper     | mid_control|rotation | Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence. |
+| raw_place   | proposed_region_id   | semantic_tags        | mapping_confidence   | review_status                     | review_basis                                                     | notes                                                                             |
+|:------------|:---------------------|:---------------------|:---------------------|:----------------------------------|:-----------------------------------------------------------------|:----------------------------------------------------------------------------------|
+| Bridge      | second_mid_upper     | mid_control|rotation | medium               | accepted_from_coordinate_evidence | stage_8_6_coordinate_evidence|parser_place_name|vertical_profile | Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence. |
+| Upstairs    | second_mid_upper     | mid_control|rotation | medium               | accepted_from_coordinate_evidence | stage_8_6_coordinate_evidence|parser_place_name|vertical_profile | Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence. |
+| Deck        | second_mid_upper     | mid_control|rotation | medium               | accepted_from_coordinate_evidence | stage_8_6_coordinate_evidence|parser_place_name|vertical_profile | Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence. |
+| Kitchen     | second_mid_upper     | mid_control|rotation | medium               | accepted_from_coordinate_evidence | stage_8_6_coordinate_evidence|parser_place_name|vertical_profile | Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence. |
 
 ## Unresolved Places
 _No rows available._
@@ -175,9 +175,9 @@ Latest recorded Mirage regression passed: `true`.
 _No rows available._
 
 ## Readiness
-| audit_id                         | map_id   | target_team   | stage_8_6_ready   |   observed_places |   mapped_places |   unmapped_places |   observed_ticks |   mapped_ticks |   mapped_tick_share |   physical_regions |   required_semantics |   resolved_semantics |   missing_semantics | bombsite_a_resolved   | bombsite_b_resolved   |   frozen_map_abstract_features |   supported_map_abstract_features |   unsupported_map_abstract_features |   candidate_features |   candidate_features_available |   candidate_features_cross_map_comparable | feature_contract_version   | mirage_regression_passed   |   critical_unknowns |   warnings | ready_for_inferno_feature_run   | status   | created_at                       |
-|:---------------------------------|:---------|:--------------|:------------------|------------------:|----------------:|------------------:|-----------------:|---------------:|--------------------:|-------------------:|---------------------:|---------------------:|--------------------:|:----------------------|:----------------------|-------------------------------:|----------------------------------:|------------------------------------:|---------------------:|-------------------------------:|------------------------------------------:|:---------------------------|:---------------------------|--------------------:|-----------:|:--------------------------------|:---------|:---------------------------------|
-| inferno_region_mapping_stage_8_7 | inferno  | Vitality      | True              |                24 |              24 |                 0 |         10080330 |       10080330 |                   1 |                 21 |                    4 |                    4 |                   0 | True                  | True                  |                            308 |                               308 |                                   0 |                   31 |                             31 |                                        22 | v2                         | True                       |                   0 |          0 | True                            | ok       | 2026-08-18T20:49:43.577243+00:00 |
+| audit_id                         | map_id   | target_team   | stage_8_6_ready   |   observed_places |   mapped_places |   unmapped_places |   observed_ticks |   source_ticks |   non_null_place_ticks |   valid_named_place_ticks |   blank_place_ticks |   invalid_place_ticks |   mapped_ticks |   mapped_tick_share |   mapped_share_of_valid_named_place_ticks |   mapped_share_of_all_ticks |   physical_regions |   required_semantics |   resolved_semantics |   missing_semantics | bombsite_a_resolved   | bombsite_b_resolved   |   frozen_map_abstract_features |   supported_map_abstract_features |   unsupported_map_abstract_features |   candidate_features |   candidate_features_available |   candidate_features_cross_map_comparable | feature_contract_version   | mirage_regression_passed   |   critical_unknowns |   warnings | ready_for_inferno_feature_run   | status   | created_at                       | mapping_config_path                      |
+|:---------------------------------|:---------|:--------------|:------------------|------------------:|----------------:|------------------:|-----------------:|---------------:|-----------------------:|--------------------------:|--------------------:|----------------------:|---------------:|--------------------:|------------------------------------------:|----------------------------:|-------------------:|---------------------:|---------------------:|--------------------:|:----------------------|:----------------------|-------------------------------:|----------------------------------:|------------------------------------:|---------------------:|-------------------------------:|------------------------------------------:|:---------------------------|:---------------------------|--------------------:|-----------:|:--------------------------------|:---------|:---------------------------------|:-----------------------------------------|
+| inferno_region_mapping_stage_8_7 | inferno  | Vitality      | True              |                24 |              24 |                 0 |         10080330 |       10081430 |               10081430 |                  10080330 |                1100 |                     0 |       10080330 |                   1 |                                         1 |                    0.999891 |                 21 |                    4 |                    4 |                   0 | True                  | True                  |                            308 |                               308 |                                   0 |                   31 |                             31 |                                        22 | v2                         | True                       |                   0 |          0 | True                            | ok       | 2026-08-18T23:03:45.040788+00:00 | configs\maps\region_mapping\inferno.yaml |
 
 ## Next Stage
 Next: Stage 8.8 -- Inferno Feature Pipeline Run & Multi-Map Gold Storage. Do not start it automatically.

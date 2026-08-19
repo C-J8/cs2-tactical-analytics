@@ -13,7 +13,9 @@ from src.features.position_features import build_position_outputs, load_early_ti
 from src.features.region_mapping import choose_place_column, load_region_mapping_from_registry
 from src.features.round_progression import build_round_outcome_context, build_round_region_timeline
 from src.features.side_dataset_audit import build_side_dataset_audit
+from src.maps.identity import resolve_map_identity
 from src.maps.semantic import legacy_feature_groups_for_registry, legacy_groups_for_semantic
+from src.storage.scoped_gold import GOLD_DATASET_SPECS, make_gold_scope, map_id_series, write_scoped_dataset
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 
@@ -29,11 +31,16 @@ def run_side_dataset_pipeline(
     map_registry_path: Path = Path("configs/maps/map_registry.yaml"),
 ) -> tuple[dict[str, pd.DataFrame], dict[str, Path], dict[str, int]]:
     project = load_project_config(config_path)
+    project_root = config_path.resolve().parent.parent
     target_team = target_team or project.target_teams[0]
     target_map = target_map or project.target_maps[0]
-    silver_dir = project.parsed_silver_dir
-    gold_dir = silver_dir.parent.parent / "gold"
+    silver_dir = project.parsed_silver_dir if project.parsed_silver_dir.is_absolute() else project_root / project.parsed_silver_dir
+    gold_dir = project_root / "data" / "gold"
     feature_windows = configured_feature_windows(project.feature_windows)
+    effective_registry_path = map_registry_path if map_registry_path.is_absolute() else project_root / map_registry_path
+    if not effective_registry_path.exists() and not map_registry_path.is_absolute() and map_registry_path.exists():
+        effective_registry_path = map_registry_path
+    identity = resolve_map_identity(target_map, registry_path=effective_registry_path)
 
     round_features = read_catalog(gold_dir / "round_features" / "round_features_mvp.parquet")
     round_base = read_catalog(gold_dir / "round_features" / "round_base.parquet")
@@ -46,10 +53,13 @@ def run_side_dataset_pipeline(
         )
     round_features = apply_round_state(round_features, read_catalog(round_state_path))
     round_features = normalize_side_values(round_features)
-    filtered = round_features[(round_features["target_team"] == target_team) & (round_features["map_name"] == target_map)].copy()
+    filtered = round_features[
+        (round_features["target_team"].astype(str).str.casefold() == target_team.casefold())
+        & (map_id_series(round_features["map_name"], registry_path=effective_registry_path).eq(identity.map_id))
+    ].copy()
     datasets = build_side_datasets(filtered)
 
-    registry, region_lookup, region_config = load_region_mapping_from_registry(target_map, registry_path=map_registry_path)
+    registry, region_lookup, region_config = load_region_mapping_from_registry(identity.display_name, registry_path=effective_registry_path)
     region_feature_groups = legacy_feature_groups_for_registry(registry, ["mid_control", "a_pressure", "b_pressure", "ct_space"])
     pressure_groups = set()
     for semantic_id in ["mid_control", "a_pressure", "b_pressure", "site_a", "site_b"]:
@@ -64,15 +74,22 @@ def run_side_dataset_pipeline(
         region_feature_groups=region_feature_groups,
         windows=feature_windows,
     )
+    if not region_presence.empty and "map_name" in region_presence.columns:
+        region_presence["map_name"] = registry.display_name
 
     kills = pd.read_parquet(silver_dir / "kills.parquet") if (silver_dir / "kills.parquet").exists() else pd.DataFrame()
     bomb = pd.read_parquet(silver_dir / "bomb.parquet") if (silver_dir / "bomb.parquet").exists() else pd.DataFrame()
     utility_events_path = gold_dir / "utility_events" / "utility_events.parquet"
     utility_events = read_catalog(utility_events_path) if utility_events_path.exists() else pd.DataFrame()
+    if not utility_events.empty and "round_feature_id" in utility_events.columns:
+        utility_events = utility_events[utility_events["round_feature_id"].astype(str).isin(set(filtered["round_feature_id"].astype(str)))].copy()
     death_context = build_death_context(kills, filtered, region_lookup=region_lookup)
     bomb_timeline = build_bomb_carrier_timeline(early_ticks, filtered, bomb, region_lookup=region_lookup, place_column=place_column, windows=feature_windows)
     region_timeline = build_round_region_timeline(region_presence, filtered, utility_events, death_context, bomb_timeline, windows=feature_windows)
     outcome_context = build_round_outcome_context(filtered, region_timeline, death_context, bomb_timeline, windows=feature_windows, pressure_groups=pressure_groups)
+    for frame in [death_context, bomb_timeline, region_timeline, outcome_context]:
+        if not frame.empty and "map_name" in frame.columns:
+            frame["map_name"] = registry.display_name
     notes = {
         "ct_side": "Uses round_state_resolved when available; a zero CT-side count now indicates side resolution should be audited."
     }
@@ -80,7 +97,15 @@ def run_side_dataset_pipeline(
 
     outputs: dict[str, Path] = {}
     if not dry_run:
-        outputs.update(write_all_outputs(gold_dir, datasets, region_timeline, death_context, bomb_timeline, outcome_context, side_audit, force=force))
+        scope = make_gold_scope(
+            map_id=identity.map_id,
+            map_name=identity.display_name,
+            target_team=target_team,
+            parse_ids=set(filtered["parse_id"].dropna().astype(str)),
+            round_feature_ids=set(filtered["round_feature_id"].dropna().astype(str)),
+            round_ids=set(filtered["round_id"].dropna().astype(str)),
+        )
+        outputs.update(write_all_outputs(gold_dir, datasets, region_timeline, death_context, bomb_timeline, outcome_context, side_audit, scope=scope, registry_path=effective_registry_path, force=force))
     frames = {
         **datasets,
         "round_region_timeline": region_timeline,
@@ -179,18 +204,29 @@ def write_all_outputs(
     outcome_context: pd.DataFrame,
     side_audit: pd.DataFrame,
     *,
+    scope,
+    registry_path: Path,
     force: bool,
 ) -> dict[str, Path]:
     outputs = {}
-    round_dir = ensure_dir(gold_dir / "round_features")
-    progression_dir = ensure_dir(gold_dir / "round_progression")
+    dataset_map = {
+        "t_side_all": "round_features_t_side_all",
+        "t_side_planted": "round_features_t_side_planted",
+        "ct_side": "round_features_ct_side",
+    }
     audit_dir = ensure_dir(gold_dir / "feature_audit")
     for dataset_type, df in datasets.items():
-        outputs.update(write_frame(df, round_dir / f"round_features_{dataset_type}", csv=True, parquet=True, force=force))
-    outputs.update(write_frame(region_timeline, progression_dir / "round_region_timeline", csv=True, parquet=True, force=force))
-    outputs.update(write_frame(death_context, progression_dir / "death_context_by_round", csv=True, parquet=True, force=force))
-    outputs.update(write_frame(bomb_timeline, progression_dir / "bomb_carrier_timeline", csv=True, parquet=True, force=force))
-    outputs.update(write_frame(outcome_context, progression_dir / "round_outcome_context", csv=True, parquet=True, force=force))
+        spec_name = dataset_map[dataset_type]
+        dataset_outputs, _ = write_scoped_dataset(df, gold_dir, scope, GOLD_DATASET_SPECS[spec_name], registry_path=registry_path, force=force)
+        outputs.update(dataset_outputs)
+    for spec_name, frame in [
+        ("round_region_timeline", region_timeline),
+        ("death_context_by_round", death_context),
+        ("bomb_carrier_timeline", bomb_timeline),
+        ("round_outcome_context", outcome_context),
+    ]:
+        dataset_outputs, _ = write_scoped_dataset(frame, gold_dir, scope, GOLD_DATASET_SPECS[spec_name], registry_path=registry_path, force=force)
+        outputs.update(dataset_outputs)
     outputs.update(write_frame(side_audit, audit_dir / "side_dataset_audit", csv=True, parquet=True, force=force))
     return outputs
 

@@ -23,6 +23,7 @@ from src.features.round_context import build_round_base
 from src.features.utility_features import build_player_round_utility, build_utility_events
 from src.maps.identity import same_map
 from src.maps.semantic import legacy_feature_groups_for_registry
+from src.storage.scoped_gold import GOLD_DATASET_SPECS, make_gold_scope, write_scoped_dataset
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 
@@ -106,14 +107,16 @@ def run_feature_pipeline(
     project_root = config_path.resolve().parent.parent
     target_map = target_map or project.target_maps[0]
     target_team = target_team or project.target_teams[0]
-    silver_dir = project.parsed_silver_dir
-    gold_dir = silver_dir.parent.parent / "gold"
+    silver_dir = project.parsed_silver_dir if project.parsed_silver_dir.is_absolute() else project_root / project.parsed_silver_dir
+    gold_dir = project_root / "data" / "gold"
     warnings: list[str] = []
     feature_windows = configured_feature_windows(project.feature_windows)
     if window_end is not None:
         warnings.append("--window-end is deprecated; using feature_windows from configs/project.yaml.")
 
     effective_registry_path = map_registry_path if map_registry_path.is_absolute() else project_root / map_registry_path
+    if not effective_registry_path.exists() and not map_registry_path.is_absolute() and map_registry_path.exists():
+        effective_registry_path = map_registry_path
     registry, region_lookup, region_config = load_region_mapping_from_registry(target_map, registry_path=effective_registry_path)
     feature_contract = load_feature_contract(gold_dir, feature_contract_path)
     candidate_feature_set = load_candidate_feature_set(gold_dir)
@@ -133,6 +136,8 @@ def run_feature_pipeline(
     rounds = pd.read_parquet(silver_dir / "rounds.parquet")
     bomb = pd.read_parquet(silver_dir / "bomb.parquet") if (silver_dir / "bomb.parquet").exists() else pd.DataFrame()
     round_base = build_round_base(rounds, feature_eligible, bomb)
+    if not round_base.empty and "map_name" in round_base.columns:
+        round_base["map_name"] = registry.display_name
 
     early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), round_base, windows=feature_windows)
     place_column = choose_place_column(list(early_ticks.columns), region_config)
@@ -147,6 +152,8 @@ def run_feature_pipeline(
         region_feature_groups=region_feature_groups,
         windows=feature_windows,
     )
+    if not region_presence.empty and "map_name" in region_presence.columns:
+        region_presence["map_name"] = registry.display_name
     player_utility, utility_start_wide = build_player_round_utility(early_ticks, round_base)
     utility_events, utility_events_wide, diagnostics = build_utility_events(
         silver_dir,
@@ -181,7 +188,30 @@ def run_feature_pipeline(
 
     outputs: dict[str, Path] = {}
     if not dry_run:
-        outputs.update(write_outputs(round_features, round_base, player_utility, utility_events, region_presence, feature_audit, map_refactor_audits, force=force))
+        scope = make_gold_scope(
+            map_id=registry.map_id,
+            map_name=registry.display_name,
+            target_team=target_team,
+            parse_ids=set(feature_eligible["parse_id"].dropna().astype(str)),
+            round_feature_ids=set(round_features["round_feature_id"].dropna().astype(str)),
+            round_ids=set(round_features["round_id"].dropna().astype(str)),
+        )
+        outputs.update(
+            write_outputs(
+                round_features,
+                round_base,
+                player_utility,
+                utility_events,
+                region_presence,
+                feature_audit,
+                map_refactor_audits,
+                gold_dir=gold_dir,
+                scope=scope,
+                registry_path=effective_registry_path,
+                write_reference_audits=registry.map_id == "mirage",
+                force=force,
+            )
+        )
     summary = {
         "demos_used": len(feature_eligible),
         "rounds_generated": len(round_features),
@@ -216,21 +246,35 @@ def write_outputs(
     feature_audit: pd.DataFrame,
     map_refactor_audits: dict[str, pd.DataFrame],
     *,
+    gold_dir: Path,
+    scope,
+    registry_path: Path,
+    write_reference_audits: bool,
     force: bool,
 ) -> dict[str, Path]:
     outputs: dict[str, Path] = {}
-    round_dir = ensure_dir(Path("data/gold/round_features"))
-    utility_dir = ensure_dir(Path("data/gold/utility_events"))
-    region_dir = ensure_dir(Path("data/gold/region_presence"))
-    audit_dir = ensure_dir(Path("data/gold/feature_audit"))
-    outputs.update(write_frame(round_features, round_dir / "round_features_mvp", csv=True, parquet=True, force=force))
-    outputs.update(write_frame(round_base, round_dir / "round_base", csv=False, parquet=True, force=force))
-    outputs.update(write_frame(player_utility, round_dir / "player_round_utility", csv=False, parquet=True, force=force))
-    outputs.update(write_frame(utility_events, utility_dir / "utility_events", csv=False, parquet=True, force=force))
-    outputs.update(write_frame(region_presence, region_dir / "region_presence_by_round", csv=False, parquet=True, force=force))
-    outputs.update(write_frame(feature_audit, audit_dir / "feature_audit", csv=True, parquet=True, force=force))
-    for name, frame in map_refactor_audits.items():
-        outputs.update(write_frame(frame, audit_dir / name, csv=True, parquet=True, force=force))
+    for dataset_name, frame in [
+        ("round_features_mvp", round_features),
+        ("round_base", round_base),
+        ("player_round_utility", player_utility),
+        ("utility_events", utility_events),
+        ("region_presence_by_round", region_presence),
+    ]:
+        dataset_outputs, _ = write_scoped_dataset(
+            frame,
+            gold_dir,
+            scope,
+            GOLD_DATASET_SPECS[dataset_name],
+            registry_path=registry_path,
+            force=force,
+        )
+        outputs.update(dataset_outputs)
+    audit_dir = ensure_dir(gold_dir / "feature_audit")
+    audit_name = "feature_audit" if write_reference_audits else f"feature_audit_{scope.map_id}"
+    outputs.update(write_frame(feature_audit, audit_dir / audit_name, csv=True, parquet=True, force=force))
+    if write_reference_audits:
+        for name, frame in map_refactor_audits.items():
+            outputs.update(write_frame(frame, audit_dir / name, csv=True, parquet=True, force=force))
     return outputs
 
 

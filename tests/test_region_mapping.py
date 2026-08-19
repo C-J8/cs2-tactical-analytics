@@ -117,6 +117,97 @@ aliases:
 """.strip(),
         encoding="utf-8",
     )
+    policy_dir = maps_dir / "region_mapping"
+    policy_dir.mkdir(parents=True, exist_ok=True)
+    (policy_dir / "inferno.yaml").write_text(
+        """
+map_id: inferno
+map_name: Inferno
+mapping_version: v1
+min_mapped_tick_share: 0.95
+thresholds:
+  absurd_center_spread: 2500.0
+  review_center_spread: 1000.0
+  review_vertical_spread: 350.0
+bombsites:
+  A: bombsitea
+  B: bombsiteb
+place_mappings:
+  banana:
+    region_id: banana
+    display_name: Banana
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name]
+    semantic_tags: [b_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  bombsiteb:
+    region_id: bombsiteb
+    display_name: Bombsite B
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name]
+    semantic_tags: [site_b]
+    notes: Direct named-area mapping from observed parser place.
+  bombsitea:
+    region_id: bombsitea
+    display_name: Bombsite A
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name]
+    semantic_tags: [site_a]
+    notes: Direct named-area mapping from observed parser place.
+  middle:
+    region_id: middle
+    display_name: Middle
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name]
+    semantic_tags: [mid_control]
+    notes: Direct named-area mapping from observed parser place.
+  ctspawn:
+    region_id: ctspawn
+    display_name: CT Spawn
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name]
+    semantic_tags: [ct_space]
+    notes: Direct named-area mapping from observed parser place.
+  pit:
+    region_id: pit
+    display_name: Pit
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name]
+    semantic_tags: [a_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  bridge:
+    region_id: second_mid_upper
+    display_name: Second Mid Upper Route
+    mapping_type: grouped
+    mapping_confidence: medium
+    review_status: accepted_from_coordinate_evidence
+    review_basis: [stage_8_6_coordinate_evidence]
+    semantic_tags: [mid_control, rotation]
+    notes: Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.
+  upstairs:
+    region_id: second_mid_upper
+    display_name: Second Mid Upper Route
+    mapping_type: grouped
+    mapping_confidence: medium
+    review_status: accepted_from_coordinate_evidence
+    review_basis: [stage_8_6_coordinate_evidence]
+    semantic_tags: [mid_control, rotation]
+    notes: Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.
+""".strip(),
+        encoding="utf-8",
+    )
 
 
 def _write_area_discovery(tmp_path: Path, *, ready: bool) -> None:

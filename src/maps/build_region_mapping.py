@@ -38,70 +38,6 @@ ABSURD_CENTER_SPREAD = 2500.0
 REVIEW_CENTER_SPREAD = 1000.0
 REVIEW_VERTICAL_SPREAD = 350.0
 
-DIRECT_SEMANTIC_POLICY = {
-    "banana": ["b_pressure"],
-    "ruins": ["b_pressure"],
-    "bombsiteb": ["site_b"],
-    "ctspawn": ["ct_space"],
-    "bombsitea": ["site_a"],
-    "tspawn": ["t_spawn_area"],
-    "tramp": ["t_spawn_area", "mid_control"],
-    "middle": ["mid_control"],
-    "topofmid": ["mid_control"],
-    "secondmid": ["mid_control"],
-    "lowermid": ["mid_control"],
-    "underpass": ["mid_control", "rotation"],
-    "apartments": ["a_pressure"],
-    "balcony": ["a_pressure"],
-    "pit": ["a_pressure"],
-    "quad": ["a_pressure"],
-    "graveyard": ["a_pressure"],
-    "backalley": ["a_pressure"],
-    "arch": ["ct_space", "rotation"],
-    "library": ["ct_space", "rotation"],
-}
-GROUPED_REGION_POLICY = {
-    "bridge": {
-        "region_id": "second_mid_upper",
-        "display_name": "Second Mid Upper Route",
-        "semantic_tags": ["mid_control", "rotation"],
-        "mapping_confidence": "medium",
-        "notes": "Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.",
-    },
-    "upstairs": {
-        "region_id": "second_mid_upper",
-        "display_name": "Second Mid Upper Route",
-        "semantic_tags": ["mid_control", "rotation"],
-        "mapping_confidence": "medium",
-        "notes": "Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.",
-    },
-    "deck": {
-        "region_id": "second_mid_upper",
-        "display_name": "Second Mid Upper Route",
-        "semantic_tags": ["mid_control", "rotation"],
-        "mapping_confidence": "medium",
-        "notes": "Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.",
-    },
-    "kitchen": {
-        "region_id": "second_mid_upper",
-        "display_name": "Second Mid Upper Route",
-        "semantic_tags": ["mid_control", "rotation"],
-        "mapping_confidence": "medium",
-        "notes": "Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.",
-    },
-}
-DISPLAY_OVERRIDES = {
-    "bombsitea": "Bombsite A",
-    "bombsiteb": "Bombsite B",
-    "ctspawn": "CT Spawn",
-    "tspawn": "T Spawn",
-    "topofmid": "Top of Mid",
-    "secondmid": "Second Mid",
-    "lowermid": "Lower Mid",
-    "tramp": "T Ramp",
-    "backalley": "Back Alley",
-}
-
 
 def run_region_mapping(
     config_path: Path,
@@ -118,9 +54,11 @@ def run_region_mapping(
     if identity.map_id != "inferno":
         raise ValueError("Stage 8.7 only writes the Inferno region mapping.")
     target_team = target_team or project.target_teams[0]
-    gold_dir = project.parsed_silver_dir.parent.parent / "gold"
+    gold_dir = project_root / "data" / "gold"
     area_dir = gold_dir / "maps" / "area_discovery"
     output_dir = gold_dir / "maps" / "inferno" / "region_mapping"
+    mapping_config_path = project_root / "configs" / "maps" / "region_mapping" / f"{identity.map_id}.yaml"
+    mapping_config = load_mapping_config(mapping_config_path)
     now = now_utc()
 
     summary = scope_frame(read_with_fallback(area_dir / "map_area_discovery_summary"), identity.map_id, target_team)
@@ -139,13 +77,13 @@ def run_region_mapping(
     )
     contract = contract_frames["feature_contract"]
     inputs = load_area_inputs(area_dir, identity.map_id, target_team)
-    proposal = build_mapping_proposal(inputs)
+    proposal = build_mapping_proposal(inputs, mapping_config)
     crosswalk = build_place_region_crosswalk(proposal)
     physical = build_physical_region_inventory(proposal, inputs["coordinates"])
-    semantic_mapping = build_semantic_mapping(physical, contract)
+    semantic_mapping = build_semantic_mapping(physical, contract, mapping_config)
     semantic_coverage = build_semantic_coverage(semantic_mapping, contract, physical)
-    coordinate_validation = build_coordinate_validation(proposal, inputs["coordinates"])
-    config_yaml = build_inferno_config(identity, physical, semantic_mapping)
+    coordinate_validation = build_coordinate_validation(proposal, inputs["coordinates"], mapping_config)
+    config_yaml = build_inferno_config(identity, physical, semantic_mapping, mapping_config)
     registry_index = build_registry_index(registry_path, inferno_active=True)
     registry_validation = validate_inferno_registry(project_root, config_yaml, crosswalk)
     candidate = build_candidate_portability(contract, semantic_coverage, read_with_fallback(gold_dir / "modeling" / "t_side_ab_candidate" / "candidate_model_feature_set"))
@@ -165,6 +103,7 @@ def run_region_mapping(
         project_root=project_root,
         created_at=now,
     )
+    audit["mapping_config_path"] = str(mapping_config_path.relative_to(project_root))
     frames = {
         "inferno_region_mapping_proposal": proposal,
         "inferno_place_region_crosswalk": crosswalk,
@@ -223,7 +162,31 @@ def scope_frame(frame: pd.DataFrame, map_id: str, target_team: str) -> pd.DataFr
     return result.reset_index(drop=True)
 
 
-def build_mapping_proposal(inputs: dict[str, pd.DataFrame]) -> pd.DataFrame:
+def load_mapping_config(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"Region mapping policy config not found: {path}")
+    with path.open("r", encoding="utf-8") as file:
+        config = yaml.safe_load(file) or {}
+    if not isinstance(config, dict):
+        raise ValueError(f"Region mapping policy config must be a mapping: {path}")
+    if "place_mappings" not in config or not isinstance(config["place_mappings"], dict):
+        raise ValueError(f"Region mapping policy config missing place_mappings: {path}")
+    return config
+
+
+def normalized_place_mappings(mapping_config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    mappings = mapping_config.get("place_mappings", {})
+    return {normalize_id(str(key)): value for key, value in mappings.items() if isinstance(value, dict)}
+
+
+def mapping_semantics(mapping_config: dict[str, Any]) -> set[str]:
+    tags: set[str] = set()
+    for mapping in normalized_place_mappings(mapping_config).values():
+        tags.update(str(tag) for tag in mapping.get("semantic_tags", []) if str(tag))
+    return tags
+
+
+def build_mapping_proposal(inputs: dict[str, pd.DataFrame], mapping_config: dict[str, Any]) -> pd.DataFrame:
     inventory = inputs["inventory"].copy()
     if inventory.empty:
         raise FileNotFoundError("Stage 8.6 inferno_place_discovery is empty.")
@@ -232,7 +195,7 @@ def build_mapping_proposal(inputs: dict[str, pd.DataFrame]) -> pd.DataFrame:
     rows = []
     for _, row in proposal.sort_values("tick_count", ascending=False).iterrows():
         normalized = str(row["normalized_place_id"])
-        mapped = mapping_for_place(normalized, str(row["raw_place"]))
+        mapped = mapping_for_place(normalized, str(row["raw_place"]), mapping_config)
         evidence = [
             f"tick_count={int(row.get('tick_count', 0))}",
             f"demo_count={int(row.get('demo_count', 0))}",
@@ -258,32 +221,36 @@ def build_mapping_proposal(inputs: dict[str, pd.DataFrame]) -> pd.DataFrame:
                 "mapping_confidence": mapped["mapping_confidence"],
                 "semantic_tags": "|".join(mapped["semantic_tags"]),
                 "evidence": "; ".join(evidence),
-                "review_status": "accepted" if mapped["region_id"] else "review_required",
+                "review_status": mapped["review_status"],
+                "review_basis": "|".join(mapped["review_basis"]),
                 "notes": mapped["notes"],
             }
         )
     return pd.DataFrame(rows)
 
 
-def mapping_for_place(normalized: str, raw_place: str) -> dict[str, Any]:
-    if normalized in GROUPED_REGION_POLICY:
-        grouped = GROUPED_REGION_POLICY[normalized]
+def mapping_for_place(normalized: str, raw_place: str, mapping_config: dict[str, Any]) -> dict[str, Any]:
+    configured = normalized_place_mappings(mapping_config).get(normalized)
+    if not configured:
         return {
-            "region_id": grouped["region_id"],
-            "display_name": grouped["display_name"],
-            "mapping_type": "grouped",
-            "mapping_confidence": grouped["mapping_confidence"],
-            "semantic_tags": grouped["semantic_tags"],
-            "notes": grouped["notes"],
+            "region_id": None,
+            "display_name": humanize_place(raw_place),
+            "mapping_type": "unresolved",
+            "mapping_confidence": "low",
+            "semantic_tags": [],
+            "review_status": "review_required",
+            "review_basis": ["parser_place_name"],
+            "notes": "No mapping policy entry exists for this parser place.",
         }
-    semantic_tags = DIRECT_SEMANTIC_POLICY.get(normalized, [])
     return {
-        "region_id": normalized,
-        "display_name": DISPLAY_OVERRIDES.get(normalized, humanize_place(raw_place)),
-        "mapping_type": "direct",
-        "mapping_confidence": "high" if semantic_tags else "medium",
-        "semantic_tags": semantic_tags,
-        "notes": "Direct named-area mapping from observed parser place." if semantic_tags else "Direct physical region mapped without tactical semantic tag.",
+        "region_id": configured.get("region_id"),
+        "display_name": configured.get("display_name") or humanize_place(raw_place),
+        "mapping_type": configured.get("mapping_type", "direct"),
+        "mapping_confidence": configured.get("mapping_confidence", "medium"),
+        "semantic_tags": list(configured.get("semantic_tags", [])),
+        "review_status": configured.get("review_status", "accepted_from_config"),
+        "review_basis": list(configured.get("review_basis", [])),
+        "notes": configured.get("notes", "Mapped from region mapping policy config."),
     }
 
 
@@ -308,6 +275,8 @@ def build_place_region_crosswalk(proposal: pd.DataFrame) -> pd.DataFrame:
             "mapped",
             "ambiguous",
             "review_required",
+            "review_status",
+            "review_basis",
             "notes",
         ]
     ].copy()
@@ -340,9 +309,9 @@ def build_physical_region_inventory(proposal: pd.DataFrame, coordinates: pd.Data
     return pd.DataFrame(rows).sort_values(["tick_count", "region_id"], ascending=[False, True]).reset_index(drop=True)
 
 
-def build_semantic_mapping(physical: pd.DataFrame, contract: pd.DataFrame) -> pd.DataFrame:
+def build_semantic_mapping(physical: pd.DataFrame, contract: pd.DataFrame, mapping_config: dict[str, Any]) -> pd.DataFrame:
     required = required_semantics(contract)
-    all_semantics = sorted(required | set(DIRECT_SEMANTIC_POLICY_SEMANTICS()) | {"site_a", "site_b", "t_spawn_area", "rotation"})
+    all_semantics = sorted(required | mapping_semantics(mapping_config) | {"site_a", "site_b", "t_spawn_area", "rotation"})
     rows = []
     for semantic_id in all_semantics:
         members = physical[physical["semantic_tags"].fillna("").str.split("|").map(lambda values: semantic_id in values)]
@@ -396,7 +365,12 @@ def build_semantic_coverage(semantic_mapping: pd.DataFrame, contract: pd.DataFra
     return frame
 
 
-def build_coordinate_validation(proposal: pd.DataFrame, coordinates: pd.DataFrame) -> pd.DataFrame:
+def build_coordinate_validation(proposal: pd.DataFrame, coordinates: pd.DataFrame, mapping_config: dict[str, Any] | None = None) -> pd.DataFrame:
+    mapping_config = mapping_config or {}
+    thresholds = mapping_config.get("thresholds", {})
+    absurd_center_spread = float(thresholds.get("absurd_center_spread", ABSURD_CENTER_SPREAD))
+    review_center_spread = float(thresholds.get("review_center_spread", REVIEW_CENTER_SPREAD))
+    review_vertical_spread = float(thresholds.get("review_vertical_spread", REVIEW_VERTICAL_SPREAD))
     coord = coordinates.drop_duplicates("raw_place") if not coordinates.empty else pd.DataFrame()
     merged = proposal.merge(coord, on=["raw_place", "normalized_place_id"], how="left", suffixes=("", "_coord"))
     rows = []
@@ -404,10 +378,10 @@ def build_coordinate_validation(proposal: pd.DataFrame, coordinates: pd.DataFram
         places = sorted(group["raw_place"].dropna().astype(str).unique())
         center_spread = max_center_spread(group)
         vertical_spread = numeric_range(group, "z_min", "z_max")
-        if center_spread > ABSURD_CENTER_SPREAD:
+        if center_spread > absurd_center_spread:
             status = "failed"
             notes = "Grouped source places are spatially incompatible."
-        elif center_spread > REVIEW_CENTER_SPREAD or vertical_spread > REVIEW_VERTICAL_SPREAD:
+        elif center_spread > review_center_spread or vertical_spread > review_vertical_spread:
             status = "review_required"
             notes = "Grouped/source place spread is elevated and should be manually reviewed."
         else:
@@ -434,7 +408,7 @@ def build_coordinate_validation(proposal: pd.DataFrame, coordinates: pd.DataFram
     return pd.DataFrame(rows)
 
 
-def build_inferno_config(identity, physical: pd.DataFrame, semantic_mapping: pd.DataFrame) -> dict[str, Any]:
+def build_inferno_config(identity, physical: pd.DataFrame, semantic_mapping: pd.DataFrame, mapping_config: dict[str, Any]) -> dict[str, Any]:
     physical_regions = []
     aliases = {}
     for index, row in enumerate(physical.to_dict("records"), start=1):
@@ -490,8 +464,8 @@ def build_inferno_config(identity, physical: pd.DataFrame, semantic_mapping: pd.
         "semantic_groups": semantic_groups,
         "aliases": aliases,
         "bombsites": {
-            "A": {"region_ids": ["bombsitea"], "notes": "Resolved from observed raw place BombsiteA."},
-            "B": {"region_ids": ["bombsiteb"], "notes": "Resolved from observed raw place BombsiteB."},
+            site: {"region_ids": [region_id], "notes": f"Resolved from region mapping policy config for site {site}."}
+            for site, region_id in mapping_config.get("bombsites", {"A": "bombsitea", "B": "bombsiteb"}).items()
         },
     }
 
@@ -653,14 +627,22 @@ def build_audit(
     critical_unknowns = int(unknowns["blocking"].sum()) if not unknowns.empty else 0
     mirage_passed = latest_mirage_regression_passed(project_root)
     registry_valid = bool(registry_validation["valid"])
-    mapped_tick_share = safe_share(mapped["tick_count"].sum(), crosswalk["tick_count"].sum())
+    source_ticks = int(first_numeric(summary.iloc[0], "source_ticks", "tick_count", default=int(crosswalk["tick_count"].sum())))
+    non_null_place_ticks = int(first_numeric(summary.iloc[0], "non_null_place_ticks", "place_non_null_rows", default=source_ticks))
+    valid_named_place_ticks = int(first_numeric(summary.iloc[0], "valid_named_place_ticks", "valid_place_rows", default=int(crosswalk["tick_count"].sum())))
+    blank_place_ticks = int(first_numeric(summary.iloc[0], "blank_place_ticks", default=max(non_null_place_ticks - valid_named_place_ticks, 0)))
+    invalid_place_ticks = int(first_numeric(summary.iloc[0], "invalid_place_ticks", default=max(source_ticks - non_null_place_ticks, 0)))
+    mapped_ticks = int(mapped["tick_count"].sum())
+    mapped_share_of_valid_named_place_ticks = safe_share(mapped_ticks, valid_named_place_ticks)
+    mapped_share_of_all_ticks = safe_share(mapped_ticks, source_ticks)
+    mapped_tick_share = mapped_share_of_valid_named_place_ticks
     ready = bool(
         bool(summary.iloc[0]["ready_for_region_mapping"])
         and registry_valid
         and registry_validation["bombsite_a_resolved"]
         and registry_validation["bombsite_b_resolved"]
         and missing.empty
-        and mapped_tick_share >= MIN_MAPPED_TICK_SHARE
+        and mapped_share_of_valid_named_place_ticks >= MIN_MAPPED_TICK_SHARE
         and critical_unknowns == 0
         and mirage_passed
     )
@@ -674,9 +656,16 @@ def build_audit(
                 "observed_places": len(crosswalk),
                 "mapped_places": int(crosswalk["mapped"].sum()),
                 "unmapped_places": int((~crosswalk["mapped"]).sum()),
-                "observed_ticks": int(crosswalk["tick_count"].sum()),
-                "mapped_ticks": int(mapped["tick_count"].sum()),
+                "observed_ticks": valid_named_place_ticks,
+                "source_ticks": source_ticks,
+                "non_null_place_ticks": non_null_place_ticks,
+                "valid_named_place_ticks": valid_named_place_ticks,
+                "blank_place_ticks": blank_place_ticks,
+                "invalid_place_ticks": invalid_place_ticks,
+                "mapped_ticks": mapped_ticks,
                 "mapped_tick_share": mapped_tick_share,
+                "mapped_share_of_valid_named_place_ticks": mapped_share_of_valid_named_place_ticks,
+                "mapped_share_of_all_ticks": mapped_share_of_all_ticks,
                 "physical_regions": len(physical),
                 "required_semantics": len(required),
                 "resolved_semantics": int(required["resolved"].sum()),
@@ -767,10 +756,6 @@ def required_features(contract: pd.DataFrame, semantic_id: str) -> list[str]:
         & contract["region_semantic"].eq(semantic_id)
     ]
     return sorted(selected["feature_name"].dropna().astype(str).tolist())
-
-
-def DIRECT_SEMANTIC_POLICY_SEMANTICS() -> set[str]:
-    return {tag for tags in DIRECT_SEMANTIC_POLICY.values() for tag in tags} | {tag for data in GROUPED_REGION_POLICY.values() for tag in data["semantic_tags"]}
 
 
 def candidate_features(candidate_set: pd.DataFrame) -> list[dict[str, Any]]:
@@ -901,6 +886,18 @@ def safe_share(value: object, total: object) -> float:
     return float(value or 0) / total_float if total_float else 0.0
 
 
+def first_numeric(row: pd.Series, *columns: str, default: int = 0) -> float:
+    for column in columns:
+        if column in row.index:
+            value = row.get(column)
+            try:
+                if pd.notna(value):
+                    return float(value)
+            except (TypeError, ValueError):
+                continue
+    return float(default)
+
+
 def humanize_place(value: str) -> str:
     text = str(value)
     return text[:1].upper() + text[1:]
@@ -927,7 +924,7 @@ def build_markdown_report(frames: dict[str, pd.DataFrame]) -> str:
             "Formalize Inferno parser places into auditable physical regions and tactical semantic groups before running Inferno features.",
             "",
             "## Stage 8.6 Evidence",
-            markdown_table(audit, ["observed_places", "observed_ticks", "mapped_places", "mapped_tick_share", "stage_8_6_ready", "ready_for_inferno_feature_run", "status"]),
+            markdown_table(audit, ["observed_places", "source_ticks", "valid_named_place_ticks", "blank_place_ticks", "mapped_ticks", "mapped_share_of_valid_named_place_ticks", "mapped_share_of_all_ticks", "stage_8_6_ready", "ready_for_inferno_feature_run", "status"]),
             "",
             "## Raw Parser Places",
             markdown_table(proposal, ["raw_place", "tick_count", "demo_count", "round_count", "x_median", "y_median", "z_median"], top_n=40),
@@ -936,7 +933,7 @@ def build_markdown_report(frames: dict[str, pd.DataFrame]) -> str:
             markdown_table(proposal, ["raw_place", "proposed_region_id", "mapping_type", "mapping_confidence", "semantic_tags", "review_status"], top_n=40),
             "",
             "## Grouped Places",
-            markdown_table(grouped, ["raw_place", "proposed_region_id", "semantic_tags", "notes"], top_n=20),
+            markdown_table(grouped, ["raw_place", "proposed_region_id", "semantic_tags", "mapping_confidence", "review_status", "review_basis", "notes"], top_n=20),
             "",
             "## Unresolved Places",
             markdown_table(proposal[proposal["mapping_type"].eq("unresolved")], ["raw_place", "notes"]),
@@ -992,6 +989,8 @@ def build_notebook_json() -> str:
         code("fig, ax = plt.subplots(figsize=(8, 7))\nax.scatter(proposal['x_median'], proposal['y_median'], s=proposal['tick_share'] * 5000 + 20)\nfor _, row in proposal.iterrows():\n    ax.text(row['x_median'], row['y_median'], row['raw_place'], fontsize=8)\nax.set_title('Inferno observed parser places')\nax.set_xlabel('x')\nax.set_ylabel('y')\nax.set_aspect('equal', adjustable='datalim')\nplt.tight_layout()"),
         md("## Grouped Places"),
         code("display(proposal[proposal['mapping_type'].eq('grouped')])"),
+        md("## second_mid_upper Coordinate Review"),
+        code("import math\nsecond = proposal[proposal['proposed_region_id'].eq('second_mid_upper')].copy()\ncenters = second[['raw_place','x_median','y_median','z_median']].dropna()\npairs = []\nfor i, left in centers.iterrows():\n    for j, right in centers.iterrows():\n        if j <= i:\n            continue\n        pairs.append({'left': left['raw_place'], 'right': right['raw_place'], 'distance': math.dist((left['x_median'], left['y_median'], left['z_median']), (right['x_median'], right['y_median'], right['z_median']))})\npairwise = pd.DataFrame(pairs)\ndisplay(second[['raw_place','proposed_region_id','mapping_confidence','review_status','review_basis','x_median','y_median','z_median']])\ndisplay(pairwise)\nprint('max_center_spread=', 0 if pairwise.empty else pairwise['distance'].max())\nprint('vertical_spread=', second['z_median'].max() - second['z_median'].min())\nassert pairwise.empty or pairwise['distance'].max() <= 1000"),
         md("## Physical Regions"),
         code("display(physical)"),
         md("## Semantic Groups"),

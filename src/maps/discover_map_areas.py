@@ -203,8 +203,13 @@ def build_scope_context(
         "place_column": place_column,
         "parse_ids": parse_ids,
         "tick_count": tick_count,
+        "source_ticks": tick_count,
         "place_non_null_rows": int(values["place_non_null_rows"]),
+        "non_null_place_ticks": int(values["place_non_null_rows"]),
         "valid_place_rows": valid_place_rows,
+        "valid_named_place_ticks": valid_place_rows,
+        "blank_place_ticks": max(int(values["place_non_null_rows"]) - valid_place_rows, 0),
+        "invalid_place_ticks": max(tick_count - int(values["place_non_null_rows"]), 0),
         "place_non_null_share": int(values["place_non_null_rows"]) / tick_count if tick_count else 0.0,
         "unique_places": unique_places,
         "demo_count": int(values["demo_count"]),
@@ -231,8 +236,13 @@ def failed_context(
         "place_column": place_column,
         "parse_ids": set(),
         "tick_count": 0,
+        "source_ticks": 0,
         "place_non_null_rows": 0,
+        "non_null_place_ticks": 0,
         "valid_place_rows": 0,
+        "valid_named_place_ticks": 0,
+        "blank_place_ticks": 0,
+        "invalid_place_ticks": 0,
         "place_non_null_share": 0.0,
         "unique_places": 0,
         "demo_count": 0,
@@ -626,8 +636,13 @@ def build_summary(*, identity, target_team: str, context: dict[str, Any], invent
                 "demo_count": int(context["demo_count"]),
                 "round_count": int(context["round_count"]),
                 "tick_count": int(context["tick_count"]),
+                "source_ticks": int(context["source_ticks"]),
                 "place_column": context["place_column"],
                 "place_non_null_rows": int(context["place_non_null_rows"]),
+                "non_null_place_ticks": int(context["non_null_place_ticks"]),
+                "valid_named_place_ticks": int(context["valid_named_place_ticks"]),
+                "blank_place_ticks": int(context["blank_place_ticks"]),
+                "invalid_place_ticks": int(context["invalid_place_ticks"]),
                 "place_non_null_share": float(context["place_non_null_share"]),
                 "unique_raw_places": int(context["unique_places"]),
                 "places_seen_all_demos": all_demo,
@@ -672,6 +687,10 @@ def build_audit(
                 "source_ticks": int(context["tick_count"]),
                 "place_column": context["place_column"],
                 "place_non_null_rows": int(context["place_non_null_rows"]),
+                "non_null_place_ticks": int(context["non_null_place_ticks"]),
+                "valid_named_place_ticks": int(context["valid_named_place_ticks"]),
+                "blank_place_ticks": int(context["blank_place_ticks"]),
+                "invalid_place_ticks": int(context["invalid_place_ticks"]),
                 "place_non_null_share": float(context["place_non_null_share"]),
                 "unique_places": int(context["unique_places"]),
                 "coordinate_profiles_generated": len(frames["map_place_coordinates"]),
@@ -1006,7 +1025,7 @@ def empty_frame(columns: list[str]) -> pd.DataFrame:
 
 
 def summary_columns() -> list[str]:
-    return ["map_id", "map_name", "target_team", "demo_count", "round_count", "tick_count", "place_column", "place_non_null_rows", "place_non_null_share", "unique_raw_places", "places_seen_all_demos", "places_seen_multiple_demos", "places_seen_one_demo", "xyz_available", "discovery_status", "ready_for_region_mapping", "created_at"]
+    return ["map_id", "map_name", "target_team", "demo_count", "round_count", "tick_count", "source_ticks", "place_column", "place_non_null_rows", "non_null_place_ticks", "valid_named_place_ticks", "blank_place_ticks", "invalid_place_ticks", "place_non_null_share", "unique_raw_places", "places_seen_all_demos", "places_seen_multiple_demos", "places_seen_one_demo", "xyz_available", "discovery_status", "ready_for_region_mapping", "created_at"]
 
 
 def inventory_columns() -> list[str]:
@@ -1057,7 +1076,7 @@ def inferno_columns() -> list[str]:
 
 
 def audit_columns() -> list[str]:
-    return ["audit_id", "map_id", "map_name", "target_team", "source_demos", "source_rounds", "source_ticks", "place_column", "place_non_null_rows", "place_non_null_share", "unique_places", "coordinate_profiles_generated", "coverage_profiles_generated", "stability_profiles_generated", "unknown_count", "critical_unknown_count", "registry_crosswalk_available", "registry_matched_places", "registry_unmatched_places", "registry_matched_tick_share", "ready_for_region_mapping", "status", "created_at"]
+    return ["audit_id", "map_id", "map_name", "target_team", "source_demos", "source_rounds", "source_ticks", "place_column", "place_non_null_rows", "non_null_place_ticks", "valid_named_place_ticks", "blank_place_ticks", "invalid_place_ticks", "place_non_null_share", "unique_places", "coordinate_profiles_generated", "coverage_profiles_generated", "stability_profiles_generated", "unknown_count", "critical_unknown_count", "registry_crosswalk_available", "registry_matched_places", "registry_unmatched_places", "registry_matched_tick_share", "ready_for_region_mapping", "status", "created_at"]
 
 
 def parse_args() -> argparse.Namespace:

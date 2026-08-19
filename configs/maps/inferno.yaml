@@ -562,8 +562,8 @@ bombsites:
   A:
     region_ids:
     - bombsitea
-    notes: Resolved from observed raw place BombsiteA.
+    notes: Resolved from region mapping policy config for site A.
   B:
     region_ids:
     - bombsiteb
-    notes: Resolved from observed raw place BombsiteB.
+    notes: Resolved from region mapping policy config for site B.

@@ -8,6 +8,8 @@ import polars as pl
 import yaml
 
 from src.config.schemas import load_project_config
+from src.maps.identity import resolve_map_identity
+from src.storage.scoped_gold import GOLD_DATASET_SPECS, make_gold_scope, map_id_series, write_scoped_dataset
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 from src.utils.text import clean_string
@@ -62,16 +64,29 @@ def run_round_state_pipeline(
     *,
     force: bool = False,
     dry_run: bool = False,
+    target_team: str | None = None,
+    target_map: str | None = None,
+    map_registry_path: Path = Path("configs/maps/map_registry.yaml"),
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Path], dict[str, int]]:
     project = load_project_config(config_path)
-    silver_dir = project.parsed_silver_dir
-    gold_dir = silver_dir.parent.parent / "gold"
+    project_root = config_path.resolve().parent.parent
+    silver_dir = project.parsed_silver_dir if project.parsed_silver_dir.is_absolute() else project_root / project.parsed_silver_dir
+    gold_dir = project_root / "data" / "gold"
+    target_team = target_team or project.target_teams[0]
+    target_map = target_map or project.target_maps[0]
+    effective_registry_path = map_registry_path if map_registry_path.is_absolute() else project_root / map_registry_path
+    if not effective_registry_path.exists() and not map_registry_path.is_absolute() and map_registry_path.exists():
+        effective_registry_path = map_registry_path
+    identity = resolve_map_identity(target_map, registry_path=effective_registry_path)
     round_features = read_catalog(gold_dir / "round_features" / "round_features_mvp.parquet")
     round_base = read_catalog(gold_dir / "round_features" / "round_base.parquet")
+    round_features = scope_team_map(round_features, target_team=target_team, target_map=identity.display_name, registry_path=effective_registry_path)
+    round_base = round_base[round_base["round_feature_id"].astype(str).isin(set(round_features["round_feature_id"].astype(str)))].copy() if "round_feature_id" in round_base.columns else round_base.iloc[0:0].copy()
     rounds = pd.read_parquet(silver_dir / "rounds.parquet")
     bomb = pd.read_parquet(silver_dir / "bomb.parquet") if (silver_dir / "bomb.parquet").exists() else pd.DataFrame()
     ticks_path = silver_dir / "ticks.parquet"
-    team_rosters = load_player_rosters(project.player_rosters_path)
+    roster_path = project.player_rosters_path if project.player_rosters_path.is_absolute() else project_root / project.player_rosters_path
+    team_rosters = load_player_rosters(roster_path)
 
     state = build_round_state(
         round_features,
@@ -79,13 +94,33 @@ def run_round_state_pipeline(
         rounds,
         bomb,
         ticks_path=ticks_path,
-        target_team=project.target_teams[0],
+        target_team=target_team,
         team_rosters=team_rosters,
     )
     audit = build_round_state_audit(state)
+    audit.insert(0, "map_id", identity.map_id)
+    audit.insert(1, "map_name", identity.display_name)
+    audit.insert(2, "target_team", target_team)
     outputs: dict[str, Path] = {}
     if not dry_run:
-        outputs.update(write_round_state_outputs(state, audit, gold_dir / "round_state", force=force))
+        scope = make_gold_scope(
+            map_id=identity.map_id,
+            map_name=identity.display_name,
+            target_team=target_team,
+            parse_ids=set(state["parse_id"].dropna().astype(str)),
+            round_feature_ids=set(round_features["round_feature_id"].dropna().astype(str)),
+            round_ids=set(state["round_id"].dropna().astype(str)),
+        )
+        dataset_outputs, _ = write_scoped_dataset(
+            state,
+            gold_dir,
+            scope,
+            GOLD_DATASET_SPECS["round_state_resolved"],
+            registry_path=effective_registry_path,
+            force=force,
+        )
+        outputs.update(dataset_outputs)
+        outputs.update(write_round_state_audit(audit, gold_dir / "round_state" / "round_state_audit", target_team=target_team, map_name=identity.display_name, registry_path=effective_registry_path, force=force))
     summary = {
         "total_rounds": len(state),
         "target_team_t": int((state["target_team_side"] == "T").sum()),
@@ -94,6 +129,18 @@ def run_round_state_pipeline(
         "high_confidence_labels": int((state["label_confidence"] == "high").sum()),
     }
     return state, audit, outputs, summary
+
+
+def scope_team_map(frame: pd.DataFrame, *, target_team: str, target_map: str, registry_path: Path) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    result = frame.copy()
+    if "target_team" in result.columns:
+        result = result[result["target_team"].astype(str).str.casefold().eq(target_team.casefold())].copy()
+    if "map_name" in result.columns:
+        target_map_id = resolve_map_identity(target_map, registry_path=registry_path).map_id
+        result = result[map_id_series(result["map_name"], registry_path=registry_path).eq(target_map_id)].copy()
+    return result.reset_index(drop=True)
 
 
 def build_round_state(
@@ -416,6 +463,39 @@ def write_round_state_outputs(state: pd.DataFrame, audit: pd.DataFrame, output_d
     return outputs
 
 
+def write_round_state_audit(
+    audit: pd.DataFrame,
+    base_path: Path,
+    *,
+    target_team: str,
+    map_name: str,
+    registry_path: Path,
+    force: bool,
+) -> dict[str, Path]:
+    outputs = {}
+    for suffix in ["csv", "parquet"]:
+        path = base_path.with_suffix(f".{suffix}")
+        existing = read_catalog(path) if path.exists() else pd.DataFrame(columns=audit.columns)
+        if path.exists() and not force:
+            final = existing
+        else:
+            if existing.empty:
+                final = audit.copy()
+            else:
+                target_map_id = resolve_map_identity(map_name, registry_path=registry_path).map_id
+                other = existing[
+                    ~(
+                        existing.get("target_team", pd.Series(index=existing.index, dtype="object")).astype(str).str.casefold().eq(target_team.casefold())
+                        & map_id_series(existing.get("map_name", pd.Series(index=existing.index, dtype="object")), registry_path=registry_path).eq(target_map_id)
+                    )
+                ].copy()
+                final = pd.concat([other.reindex(columns=audit.columns), audit], ignore_index=True)
+            ensure_dir(path.parent)
+            final.to_csv(path, index=False) if suffix == "csv" else final.to_parquet(path, index=False)
+        outputs[f"round_state_audit_{suffix}"] = path
+    return outputs
+
+
 def normalize_side(value: object) -> str:
     text = str(value or "").strip().lower()
     if text in {"t", "terrorist", "terrorists"}:
@@ -494,13 +574,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--target-team", default=None)
+    parser.add_argument("--target-map", default=None)
+    parser.add_argument("--map-registry", type=Path, default=Path("configs/maps/map_registry.yaml"))
     return parser.parse_args()
 
 
 def main() -> None:
     configure_logging()
     args = parse_args()
-    _, _, outputs, summary = run_round_state_pipeline(args.config, force=args.force, dry_run=args.dry_run)
+    _, _, outputs, summary = run_round_state_pipeline(
+        args.config,
+        force=args.force,
+        dry_run=args.dry_run,
+        target_team=args.target_team,
+        target_map=args.target_map,
+        map_registry_path=args.map_registry,
+    )
     print_summary(outputs, summary)
 
 

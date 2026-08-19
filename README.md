@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.7 -- Inferno Physical Region & Tactical Semantic Mapping**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.8 -- Inferno Feature Pipeline Run & Multi-Map Gold Storage**.
 
 Project direction:
 
@@ -8,14 +8,14 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, and audited Inferno physical/semantic region mapping. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, and scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
-Validated local snapshot for Vitality on Mirage:
+Validated local snapshot for Vitality on Mirage + Inferno:
 
 - 18 feature-eligible demos;
-- 405 parsed rounds in `round_features_mvp`;
+- 527 parsed rounds in consolidated `round_features_mvp`: 405 Mirage and 122 Inferno;
 - 180 resolved T-side rounds;
 - 225 resolved CT-side rounds;
 - 98 high-confidence planted T-side rounds: 72 plant A and 26 plant B;
@@ -38,7 +38,8 @@ Validated local snapshot for Vitality on Mirage:
 - 1 Stage 8.5 multi-map parsing gate showing 5 parsed Inferno demos, 5 feature-eligible Inferno demos, Mirage preservation, and `ready_for_area_discovery = true`;
 - 1 Stage 8.6 area discovery package with 23 Mirage places, 24 Inferno places, real coordinate/coverage/stability profiles, Mirage crosswalk coverage of 100% of observed ticks, and Inferno `ready_for_region_mapping = true`;
 - 1 Stage 8.7 Inferno region-mapping package with 24 mapped raw places, 21 active physical regions, 4 frozen map-abstract semantics resolved, 31 candidate features audited for portability, and Mirage regression green after Feature Contract v2 metadata;
-- 209 tests passing and `ruff check .` passing.
+- 1 Stage 8.8 Inferno feature pipeline run with 122 Inferno rounds, 65 Inferno T-side rounds, 57 Inferno CT-side rounds, 40 high-confidence Inferno planted T-side rounds, a passing multi-map Gold gate, and `ready_for_inferno_feature_quality_gate = true`;
+- 217 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -73,6 +74,8 @@ python -m src.validation.multi_map_parse_gate --config configs/project.yaml --ta
 python -m src.maps.discover_map_areas --config configs/project.yaml --map Mirage --target-team Vitality --force
 python -m src.maps.discover_map_areas --config configs/project.yaml --map Inferno --target-team Vitality --force
 python -m src.maps.build_region_mapping --config configs/project.yaml --map Inferno --target-team Vitality --force
+python -m src.features.run_map_pipeline --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+python -m src.validation.multi_map_gold_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 ```
 
 Important dependency rules:
@@ -96,6 +99,7 @@ Important dependency rules:
 - Stage 8.5 resolves map names through canonical identity, parses explicit map/team scopes safely, preserves other maps during forced upserts, and validates readiness for future area discovery. It does not discover Inferno areas, edit Inferno semantic mappings, run Inferno feature engineering, train models, or build dashboards.
 - Stage 8.6 discovers raw parser places and coordinate evidence for parsed maps. It does not update Mirage or Inferno registry YAML files, infer tactical semantic groups, run feature engineering, train models, or alter Stage 6 outputs.
 - Stage 8.7 maps Inferno raw parser places into verified physical regions and tactical semantic groups, updates Inferno registry status to active, and adds Feature Contract v2 comparability metadata. It does not run Inferno feature engineering, round state, T-side datasets, ML, dashboards, or BigQuery.
+- Stage 8.8 runs the scoped Inferno feature pipeline and writes consolidated multi-map Gold tables while preserving Mirage rows. It does not run EDA, train models, apply Mirage models to Inferno, build dashboards, or export to BigQuery.
 
 ## MVP Scope
 
@@ -1793,6 +1797,79 @@ Feature Contract v2 separates generation portability from cross-map analytical c
 Important interpretation: `available_on_inferno = true` does not mean a Mirage-trained model can predict Inferno. It only means the feature can be generated safely for Inferno. Model transfer and multi-map modeling remain out of scope until a later stage.
 
 Stage 8.7 deliberately does not run Inferno feature engineering, Inferno round state, Inferno T-side/CT-side datasets, ML, dashboards, BigQuery, or a new map/team onboarding.
+
+## Stage 8.8 -- Inferno Feature Pipeline Run & Multi-Map Gold Storage
+
+Stage 8.8 runs the analytical feature pipeline for the validated Inferno scope and stores outputs in consolidated Gold tables that contain both Mirage and Inferno. Forced reruns replace only the selected logical scope, defined by target team plus canonical map identity, so historical Mirage rows remain intact.
+
+Run the scoped Inferno pipeline:
+
+```bash
+python -m src.features.run_map_pipeline --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+```
+
+Validate the consolidated Gold layer:
+
+```bash
+python -m src.validation.multi_map_gold_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+```
+
+The orchestrator runs only:
+
+- `src.features.build_round_features`;
+- `src.features.round_state`;
+- `src.features.side_datasets`;
+- `src.validation.multi_map_gold_gate`.
+
+It deliberately does not run Inferno EDA, train or retrain models, apply a Mirage model to Inferno, build dashboards, use Streamlit, or export to BigQuery.
+
+Main consolidated Gold tables now include Mirage + Inferno:
+
+- `data/gold/round_features/round_features_mvp.parquet`;
+- `data/gold/round_features/round_base.parquet`;
+- `data/gold/round_features/player_round_utility.parquet`;
+- `data/gold/utility_events/utility_events.parquet`;
+- `data/gold/region_presence/region_presence_by_round.parquet`;
+- `data/gold/round_state/round_state_resolved.parquet`;
+- `data/gold/round_features/round_features_t_side_all.parquet`;
+- `data/gold/round_features/round_features_t_side_planted.parquet`;
+- `data/gold/round_features/round_features_ct_side.parquet`;
+- `data/gold/round_progression/round_region_timeline.parquet`;
+- `data/gold/round_progression/death_context_by_round.parquet`;
+- `data/gold/round_progression/bomb_carrier_timeline.parquet`;
+- `data/gold/round_progression/round_outcome_context.parquet`.
+
+Validation outputs are written under:
+
+```text
+data/gold/validation/multi_map_gold/
+```
+
+The gate writes scope inventory, scoped upsert audit, key collision audit, Mirage preservation checks, Inferno feature materialization, candidate feature materialization, semantic feature sanity, round-state summary, side-dataset summary, and a final `multi_map_gold_audit`.
+
+Current Stage 8.8 snapshot:
+
+| Dataset | Mirage rows | Inferno rows |
+| --- | ---: | ---: |
+| `round_features_mvp` | 405 | 122 |
+| `region_presence_by_round` | 43,961 | 17,760 |
+| `round_state_resolved` | 405 | 122 |
+| `round_features_t_side_all` | 180 | 65 |
+| `round_features_t_side_planted` | 98 | 40 |
+| `round_features_ct_side` | 225 | 57 |
+| `round_region_timeline` | 43,961 | 17,760 |
+| `death_context_by_round` | 2,736 | 786 |
+| `bomb_carrier_timeline` | 8,910 | 2,684 |
+| `round_outcome_context` | 405 | 122 |
+
+`src/storage/scoped_gold.py` owns the generic upsert behavior for Gold tables. It uses stable keys and canonical map identity, writes atomically through temp files and `os.replace`, and refuses unsafe duplicate-key states instead of relying on row order.
+
+Docs/notebook:
+
+```text
+docs/inferno_feature_pipeline.md
+notebooks/22_inferno_feature_pipeline.ipynb
+```
 
 Validation commands:
 

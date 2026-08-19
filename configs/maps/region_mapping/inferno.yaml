@@ -1,0 +1,228 @@
+map_id: inferno
+map_name: Inferno
+mapping_version: v1
+min_mapped_tick_share: 0.95
+thresholds:
+  absurd_center_spread: 2500.0
+  review_center_spread: 1000.0
+  review_vertical_spread: 350.0
+bombsites:
+  A: bombsitea
+  B: bombsiteb
+place_mappings:
+  banana:
+    region_id: banana
+    display_name: Banana
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [b_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  bombsiteb:
+    region_id: bombsiteb
+    display_name: Bombsite B
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [site_b]
+    notes: Direct named-area mapping from observed parser place.
+  ctspawn:
+    region_id: ctspawn
+    display_name: CT Spawn
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [ct_space]
+    notes: Direct named-area mapping from observed parser place.
+  bombsitea:
+    region_id: bombsitea
+    display_name: Bombsite A
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [site_a]
+    notes: Direct named-area mapping from observed parser place.
+  tspawn:
+    region_id: tspawn
+    display_name: T Spawn
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [t_spawn_area]
+    notes: Direct named-area mapping from observed parser place.
+  middle:
+    region_id: middle
+    display_name: Middle
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [mid_control]
+    notes: Direct named-area mapping from observed parser place.
+  apartments:
+    region_id: apartments
+    display_name: Apartments
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [a_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  topofmid:
+    region_id: topofmid
+    display_name: Top of Mid
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [mid_control]
+    notes: Direct named-area mapping from observed parser place.
+  ruins:
+    region_id: ruins
+    display_name: Ruins
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [b_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  pit:
+    region_id: pit
+    display_name: Pit
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [a_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  arch:
+    region_id: arch
+    display_name: Arch
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [ct_space, rotation]
+    notes: Direct named-area mapping from observed parser place.
+  tramp:
+    region_id: tramp
+    display_name: T Ramp
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [t_spawn_area, mid_control]
+    notes: Direct named-area mapping from observed parser place.
+  secondmid:
+    region_id: secondmid
+    display_name: Second Mid
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [mid_control]
+    notes: Direct named-area mapping from observed parser place.
+  lowermid:
+    region_id: lowermid
+    display_name: Lower Mid
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [mid_control]
+    notes: Direct named-area mapping from observed parser place.
+  balcony:
+    region_id: balcony
+    display_name: Balcony
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [a_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  library:
+    region_id: library
+    display_name: Library
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [ct_space, rotation]
+    notes: Direct named-area mapping from observed parser place.
+  quad:
+    region_id: quad
+    display_name: Quad
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [a_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  backalley:
+    region_id: backalley
+    display_name: Back Alley
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [a_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  underpass:
+    region_id: underpass
+    display_name: Underpass
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [mid_control, rotation]
+    notes: Direct named-area mapping from observed parser place.
+  bridge:
+    region_id: second_mid_upper
+    display_name: Second Mid Upper Route
+    mapping_type: grouped
+    mapping_confidence: medium
+    review_status: accepted_from_coordinate_evidence
+    review_basis: [stage_8_6_coordinate_evidence, parser_place_name, vertical_profile]
+    semantic_tags: [mid_control, rotation]
+    notes: Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.
+  upstairs:
+    region_id: second_mid_upper
+    display_name: Second Mid Upper Route
+    mapping_type: grouped
+    mapping_confidence: medium
+    review_status: accepted_from_coordinate_evidence
+    review_basis: [stage_8_6_coordinate_evidence, parser_place_name, vertical_profile]
+    semantic_tags: [mid_control, rotation]
+    notes: Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.
+  deck:
+    region_id: second_mid_upper
+    display_name: Second Mid Upper Route
+    mapping_type: grouped
+    mapping_confidence: medium
+    review_status: accepted_from_coordinate_evidence
+    review_basis: [stage_8_6_coordinate_evidence, parser_place_name, vertical_profile]
+    semantic_tags: [mid_control, rotation]
+    notes: Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.
+  graveyard:
+    region_id: graveyard
+    display_name: Graveyard
+    mapping_type: direct
+    mapping_confidence: high
+    review_status: accepted_from_parser_place
+    review_basis: [parser_place_name, stage_8_6_coordinate_evidence, manual_tactical_interpretation]
+    semantic_tags: [a_pressure]
+    notes: Direct named-area mapping from observed parser place.
+  kitchen:
+    region_id: second_mid_upper
+    display_name: Second Mid Upper Route
+    mapping_type: grouped
+    mapping_confidence: medium
+    review_status: accepted_from_coordinate_evidence
+    review_basis: [stage_8_6_coordinate_evidence, parser_place_name, vertical_profile]
+    semantic_tags: [mid_control, rotation]
+    notes: Grouped with nearby elevated connector places from Stage 8.6 coordinate evidence.
