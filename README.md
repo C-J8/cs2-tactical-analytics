@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.8 -- Inferno Feature Pipeline Run & Multi-Map Gold Storage**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.9 -- Inferno Feature Quality & Tactical Readiness Gate**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, and scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, and a read-only Inferno feature-quality gate. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -39,7 +39,8 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 - 1 Stage 8.6 area discovery package with 23 Mirage places, 24 Inferno places, real coordinate/coverage/stability profiles, Mirage crosswalk coverage of 100% of observed ticks, and Inferno `ready_for_region_mapping = true`;
 - 1 Stage 8.7 Inferno region-mapping package with 24 mapped raw places, 21 active physical regions, 4 frozen map-abstract semantics resolved, 31 candidate features audited for portability, and Mirage regression green after Feature Contract v2 metadata;
 - 1 Stage 8.8 Inferno feature pipeline run with 122 Inferno rounds, 65 Inferno T-side rounds, 57 Inferno CT-side rounds, 40 high-confidence Inferno planted T-side rounds, a passing multi-map Gold gate, and `ready_for_inferno_feature_quality_gate = true`;
-- 217 tests passing and `ruff check .` passing.
+- 1 Stage 8.9 Inferno feature-quality gate with 122 scoped Inferno rounds, 477 evaluated features, 4/4 required semantics healthy, 0 dataset-reconciliation failures, 0 domain failures, 0 temporal failures, 0 label conflicts, 45 unexpected missingness blockers, 165 warnings, `ready_for_multi_map_eda = false`, and `modeling_readiness_level = exploratory_only`;
+- 230 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -76,6 +77,7 @@ python -m src.maps.discover_map_areas --config configs/project.yaml --map Infern
 python -m src.maps.build_region_mapping --config configs/project.yaml --map Inferno --target-team Vitality --force
 python -m src.features.run_map_pipeline --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.validation.multi_map_gold_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+python -m src.validation.map_feature_quality_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 ```
 
 Important dependency rules:
@@ -100,6 +102,7 @@ Important dependency rules:
 - Stage 8.6 discovers raw parser places and coordinate evidence for parsed maps. It does not update Mirage or Inferno registry YAML files, infer tactical semantic groups, run feature engineering, train models, or alter Stage 6 outputs.
 - Stage 8.7 maps Inferno raw parser places into verified physical regions and tactical semantic groups, updates Inferno registry status to active, and adds Feature Contract v2 comparability metadata. It does not run Inferno feature engineering, round state, T-side datasets, ML, dashboards, or BigQuery.
 - Stage 8.8 runs the scoped Inferno feature pipeline and writes consolidated multi-map Gold tables while preserving Mirage rows. It does not run EDA, train models, apply Mirage models to Inferno, build dashboards, or export to BigQuery.
+- Stage 8.9 reads the scoped Gold outputs from Stage 8.8 and writes only validation outputs. It checks integrity, missingness, domains, degeneracy, semantic health, labels, sample size, cross-map sanity, read-only fingerprints, and Mirage regression status. It does not rebuild features, change mappings, train models, produce predictions, or make tactical conclusions.
 
 ## MVP Scope
 
@@ -1876,4 +1879,112 @@ Validation commands:
 ```bash
 python -m pytest
 python -m ruff check .
+```
+
+## Stage 8.9 -- Inferno Feature Quality & Tactical Readiness Gate
+
+Stage 8.9 is a read-only validation gate over the consolidated Gold outputs from Stage 8.8. It answers two separate questions:
+
+- are Inferno data and features technically reliable enough for multi-map tactical EDA?
+- is the current high-confidence T-side planted A/B sample large and balanced enough for a first modeling experiment?
+
+Run:
+
+```bash
+python -m src.validation.map_feature_quality_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+```
+
+The gate does not run feature engineering, round-state resolution, side-dataset rebuilding, EDA, model training, predictions, dashboard code, BigQuery export, map registry recalculation, or semantic mapping changes. If a feature looks wrong, the gate reports a blocker or warning instead of changing the feature.
+
+Thresholds live in:
+
+```text
+configs/quality/map_feature_quality.yaml
+```
+
+Validation outputs are written under:
+
+```text
+data/gold/validation/map_feature_quality/
+```
+
+The Stage 8.9 outputs are:
+
+- `map_dataset_reconciliation`;
+- `map_feature_quality_profile`;
+- `map_feature_missingness`;
+- `map_feature_domain_validation`;
+- `map_feature_degeneracy`;
+- `map_feature_by_demo_health`;
+- `map_demo_quality_summary`;
+- `map_semantic_signal_health`;
+- `map_region_presence_sanity`;
+- `map_temporal_feature_consistency`;
+- `map_side_feature_health`;
+- `map_ab_label_quality`;
+- `map_ab_label_crosscheck`;
+- `map_modeling_sample_readiness`;
+- `mirage_inferno_feature_sanity`;
+- `map_noncomparable_feature_inventory`;
+- `map_round_quality_flags`;
+- `map_quality_review_sample`;
+- `map_quality_scorecard`;
+- `map_feature_quality_read_only_audit`;
+- `map_feature_quality_audit`.
+
+The final audit separates:
+
+- `ready_for_multi_map_eda`: data-quality readiness for Stage 8.10;
+- `ready_for_inferno_modeling_experiment`: whether an initial controlled modeling experiment is acceptable;
+- `modeling_readiness_level`: `blocked`, `exploratory_only`, `baseline_ready`, or `robust_ready`.
+
+Modeling readiness is sample-size aware. A clean quality gate can still classify modeling as `exploratory_only` or `blocked` if the planted A/B sample is too small or too imbalanced.
+
+Stage 8.9 also writes:
+
+```text
+docs/inferno_feature_quality.md
+notebooks/23_inferno_feature_quality.ipynb
+```
+
+The report is diagnostic by design: it lists missingness, constant features, all-zero features, semantic warnings, label conflicts, sample limitations, and the scorecard instead of collapsing everything into a single PASS.
+
+Current Stage 8.9 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Round features | 122 |
+| Round-state rows | 122 |
+| T-side rounds | 65 |
+| CT-side rounds | 57 |
+| Unknown-side rounds | 0 |
+| High-confidence planted T-side rounds | 40 |
+| A labels | 22 |
+| B labels | 18 |
+| Features evaluated | 477 |
+| All-null features | 46 |
+| Constant features | 144 |
+| Near-constant features | 152 |
+| All-zero features | 134 |
+| Unexpected missing features | 45 |
+| Invalid domain features | 0 |
+| Required semantics healthy | 4 / 4 |
+| Temporal failures | 0 |
+| Dataset reconciliation failures | 0 |
+| Label conflicts | 0 |
+| Comparable features checked | 409 |
+| Cross-map structural mismatch warnings | 7 |
+| Critical failures | 45 |
+| Warnings | 165 |
+| Mirage regression passed | true |
+| ready_for_multi_map_eda | false |
+| ready_for_inferno_modeling_experiment | false |
+| modeling_readiness_level | exploratory_only |
+
+Interpretation: Stage 8.9 itself runs and produces the required audit layer, but the current Inferno feature-quality gate is intentionally `failed` because several utility-count features, especially `flashes_used_*` and `he_used_*`, are fully missing in the Inferno scope. The A/B sample is classified as exploratory-only by sample-size thresholds, not baseline-ready or robust-ready.
+
+Next stage, only if `ready_for_multi_map_eda = true`:
+
+```text
+Stage 8.10 -- Vitality Multi-Map Tactical EDA: Mirage vs Inferno
 ```

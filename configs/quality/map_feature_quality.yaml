@@ -1,0 +1,49 @@
+quality_version: v1
+
+missingness:
+  warning_share: 0.10
+  critical_share: 0.50
+  full_missing_critical: true
+  motivation: >
+    A moderate null share can be expected for lifecycle-dependent features, but
+    broad unexpected missingness usually indicates an upstream extraction or
+    feature materialization issue.
+
+degeneracy:
+  near_constant_share: 0.98
+  zero_dominance_warning: 0.95
+  zero_dominance_critical: 1.00
+  minimum_unique_numeric: 2
+  motivation: >
+    Sparse tactical events are normal, but fully constant or fully zero required
+    semantic signals should be reviewed before tactical interpretation.
+
+semantic_health:
+  minimum_nonzero_round_share: 0.02
+  minimum_demo_coverage: 0.20
+  motivation: >
+    Required frozen semantics should show some real signal across the map/team
+    scope; the threshold is intentionally low because some tactical events are
+    naturally sparse in a five-demo sample.
+
+distribution_sanity:
+  large_zero_share_difference: 0.50
+  robust_location_shift_threshold: 3.00
+  range_overlap_warning: 0.10
+  motivation: >
+    Cross-map distribution differences are descriptive warnings unless they
+    look like structural feature failure, such as one map being fully constant.
+
+modeling_sample:
+  exploratory_min_total: 30
+  exploratory_min_class: 8
+  baseline_min_total: 80
+  baseline_min_class: 20
+  robust_min_total: 250
+  robust_min_class: 60
+  motivation: >
+    Small samples can support controlled exploratory baselines, but they should
+    not be presented as robust modeling evidence.
+
+review_sample:
+  max_rows: 40
