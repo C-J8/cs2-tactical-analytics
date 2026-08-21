@@ -1,0 +1,30 @@
+eda_version: v1
+
+cohorts:
+  min_rounds_for_reporting: 10
+  min_demos_for_reporting: 3
+
+bootstrap:
+  enabled: true
+  resamples: 2000
+  confidence_level: 0.95
+  cluster_by: parse_id
+  random_seed: 810
+
+findings:
+  minimum_demo_direction_agreement: 0.60
+  minimum_effect_strength: 0.147
+  max_ranked_findings: 25
+
+temporal:
+  minimum_late_window_exposure_share: 0.70
+  late_window_start_seconds: 75
+
+structural_review:
+  exclude_from_ranked_findings: true
+
+notes:
+  motivation: >
+    Stage 8.10 compares only technically eligible features across maps. Raw coordinates,
+    map-specific features, unresolved utility endpoints, and active structural-review
+    caveats are excluded from high-confidence ranked findings.

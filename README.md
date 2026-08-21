@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.9.1 -- Feature Materialization Repair & Quality Gate Recovery**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.10 -- Vitality Multi-Map Tactical EDA: Mirage vs Inferno**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, a read-only Inferno feature-quality gate, and a feature-materialization repair stage that restores flash/HE/score features without relaxing quality thresholds. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, a read-only Inferno feature-quality gate, a feature-materialization repair stage that restores flash/HE/score features without relaxing quality thresholds, and a read-only multi-map tactical EDA comparing Vitality T-side behavior on Mirage vs Inferno. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -41,7 +41,8 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 - 1 Stage 8.8 Inferno feature pipeline run with 122 Inferno rounds, 65 Inferno T-side rounds, 57 Inferno CT-side rounds, 40 high-confidence Inferno planted T-side rounds, a passing multi-map Gold gate, and `ready_for_inferno_feature_quality_gate = true`;
 - 1 Stage 8.9 Inferno feature-quality gate with 122 scoped Inferno rounds, 477 evaluated features, 4/4 required semantics healthy, 0 dataset-reconciliation failures, 0 domain failures, 0 temporal failures, 0 label conflicts, 0 unexpected missingness blockers, 166 warnings, `ready_for_multi_map_eda = true`, and `modeling_readiness_level = exploratory_only`;
 - 1 Stage 8.9.1 feature-materialization repair with flash and HE usage rebuilt from `grenades.parquet`, `score_diff_before_round` filled for all scoped Inferno rounds, explicit unresolved endpoint metadata, 0 failed repair checks, and the Inferno quality gate recovered to `status = passed`;
-- 234 tests passing and `ruff check .` passing.
+- 1 Stage 8.10 read-only multi-map EDA with Mirage + Inferno, 17 Mirage demos, 5 Inferno demos, 180 Mirage T rounds, 65 Inferno T rounds, 98 Mirage planted T rounds, 40 Inferno planted T rounds, 276 ranked-eligible comparable features, 25 ranked findings, and `ready_for_stage_8_11 = true`;
+- 241 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -80,6 +81,7 @@ python -m src.features.run_map_pipeline --config configs/project.yaml --target-m
 python -m src.validation.multi_map_gold_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.validation.map_feature_quality_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.validation.feature_materialization_repair --config configs/project.yaml --target-map Inferno --target-team Vitality --force
+python -m src.analysis.multi_map_tactical_eda --config configs/project.yaml --target-team Vitality --map Mirage --map Inferno --force
 ```
 
 Important dependency rules:
@@ -106,6 +108,7 @@ Important dependency rules:
 - Stage 8.8 runs the scoped Inferno feature pipeline and writes consolidated multi-map Gold tables while preserving Mirage rows. It does not run EDA, train models, apply Mirage models to Inferno, build dashboards, or export to BigQuery.
 - Stage 8.9 reads the scoped Gold outputs from Stage 8.8 and writes only validation outputs. It checks integrity, missingness, domains, degeneracy, semantic health, labels, sample size, cross-map sanity, read-only fingerprints, and Mirage regression status. It does not rebuild features, change mappings, train models, produce predictions, or make tactical conclusions.
 - Stage 8.9.1 repairs upstream feature materialization defects found by Stage 8.9: flash/HE utility usage, score before round, and explicit utility endpoint capability metadata. It does not relax quality thresholds, train models, produce tactical conclusions, change map mappings, build dashboards, or export to BigQuery.
+- Stage 8.10 reads the repaired multi-map Gold outputs and writes only analysis outputs under `data/gold/analysis/multi_map_tactical_eda/`, plus a report and notebook. It does not modify core Gold, map registries, feature contracts, quality thresholds, model artifacts, dashboards, or BigQuery exports.
 
 ## MVP Scope
 
@@ -2063,3 +2066,100 @@ Next stage, only if `ready_for_multi_map_eda = true`:
 ```text
 Stage 8.10 -- Vitality Multi-Map Tactical EDA: Mirage vs Inferno
 ```
+
+## Stage 8.10 -- Vitality Multi-Map Tactical EDA: Mirage vs Inferno
+
+Stage 8.10 is the first read-only multi-map tactical EDA for Vitality. It compares Mirage and Inferno T-side behavior using only features whose cross-map interpretation is technically valid.
+
+Run:
+
+```bash
+python -m src.analysis.multi_map_tactical_eda --config configs/project.yaml --target-team Vitality --map Mirage --map Inferno --force
+```
+
+Useful options:
+
+```bash
+python -m src.analysis.multi_map_tactical_eda --config configs/project.yaml --target-team Vitality --map Mirage --map Inferno --dry-run
+python -m src.analysis.multi_map_tactical_eda --config configs/project.yaml --target-team Vitality --map de_mirage --map de_inferno --eda-config configs/analysis/multi_map_tactical_eda.yaml --force
+```
+
+The engine is generic and accepts repeated `--map` values. It resolves map aliases through the map registry, scopes the target team explicitly, preserves T-side no-plant rounds, and uses cluster bootstrap by demo/`parse_id` instead of treating every round as fully independent.
+
+Stage 8.10 deliberately does not compare raw X/Y/Z coordinates, raw parser place names, map-specific features, or unresolved utility endpoint features. Endpoint-dependent columns such as `smokes_to_*` and `molotovs_to_*` are retained only in exclusion/audit outputs while endpoint resolution remains unsupported. Structural-review semantic warnings, including current `mid_control` warnings, are excluded from ranked findings when the review flag is active.
+
+Outputs:
+
+```text
+data/gold/analysis/multi_map_tactical_eda/multi_map_eda_scope_inventory.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/multi_map_feature_eligibility.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/t_side_map_summary.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/plant_site_distribution.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/direct_feature_comparison.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/semantic_feature_comparison.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/multi_map_temporal_profile.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/utility_inventory_comparison.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/utility_timing_comparison.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/team_structure_comparison.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/semantic_control_profile.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/within_map_site_comparison.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/cross_map_site_pattern_comparison.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/plant_vs_no_plant_comparison.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/round_outcome_summary.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/multi_map_demo_stability.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/opponent_sensitivity_summary.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/multi_map_finding_candidates.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/multi_map_ranked_findings.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/multi_map_excluded_findings.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/multi_map_eda_read_only_audit.{csv,parquet}
+data/gold/analysis/multi_map_tactical_eda/multi_map_tactical_eda_audit.{csv,parquet}
+```
+
+Docs/notebook:
+
+```text
+docs/vitality_mirage_vs_inferno_eda.md
+notebooks/25_vitality_multi_map_tactical_eda.ipynb
+```
+
+Current Stage 8.10 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Maps analyzed | Mirage, Inferno |
+| Mirage feature-eligible demos | 17 |
+| Inferno feature-eligible demos | 5 |
+| Mirage T rounds | 180 |
+| Inferno T rounds | 65 |
+| Mirage CT rounds | 225 |
+| Inferno CT rounds | 57 |
+| Mirage planted T rounds | 98 |
+| Inferno planted T rounds | 40 |
+| Mirage no-plant T rounds | 82 |
+| Inferno no-plant T rounds | 25 |
+| Mirage A/B plants | 72 / 26 |
+| Inferno A/B plants | 22 / 18 |
+| Features evaluated | 475 |
+| Direct-comparable features | 144 |
+| Semantic-comparable features | 132 |
+| Ranked-eligible comparable features | 276 |
+| Unresolved endpoint exclusions | 132 |
+| Structural-review exclusions | 44 |
+| Not-cross-map-comparable exclusions | 23 |
+| Finding candidates | 2,760 |
+| Ranked findings | 25 |
+| Tentative findings | 629 |
+| Excluded findings/features | 199 |
+| Late-window exposure checks | 836 |
+| Core Gold unchanged | true |
+| Modeling readiness carried forward | exploratory_only |
+| ready_for_stage_8_11 | true |
+| Status | passed |
+
+Interpretation guardrails:
+
+- A/B is comparable only as target plant-site choice, not as equivalent site geometry across maps.
+- T-side no-plant rounds are preserved and described as "no target-team plant observed", not as automatic failed executes.
+- Findings are descriptive, demo-aware, and non-causal.
+- Ranked findings exclude unresolved endpoint utility and active structural-review semantic comparisons.
+- Stage 8.10 is ready to inform Stage 8.11, but it does not train or select an Inferno model.
