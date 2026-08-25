@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.10 -- Vitality Multi-Map Tactical EDA: Mirage vs Inferno**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.10.1 -- Tactical Finding Consolidation & Evidence Hardening**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, a read-only Inferno feature-quality gate, a feature-materialization repair stage that restores flash/HE/score features without relaxing quality thresholds, and a read-only multi-map tactical EDA comparing Vitality T-side behavior on Mirage vs Inferno. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, a read-only Inferno feature-quality gate, a feature-materialization repair stage that restores flash/HE/score features without relaxing quality thresholds, a read-only multi-map tactical EDA comparing Vitality T-side behavior on Mirage vs Inferno, and hardened tactical finding consolidation that turns raw comparison rows into auditable tactical concepts. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -42,7 +42,8 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 - 1 Stage 8.9 Inferno feature-quality gate with 122 scoped Inferno rounds, 477 evaluated features, 4/4 required semantics healthy, 0 dataset-reconciliation failures, 0 domain failures, 0 temporal failures, 0 label conflicts, 0 unexpected missingness blockers, 166 warnings, `ready_for_multi_map_eda = true`, and `modeling_readiness_level = exploratory_only`;
 - 1 Stage 8.9.1 feature-materialization repair with flash and HE usage rebuilt from `grenades.parquet`, `score_diff_before_round` filled for all scoped Inferno rounds, explicit unresolved endpoint metadata, 0 failed repair checks, and the Inferno quality gate recovered to `status = passed`;
 - 1 Stage 8.10 read-only multi-map EDA with Mirage + Inferno, 17 Mirage demos, 5 Inferno demos, 180 Mirage T rounds, 65 Inferno T rounds, 98 Mirage planted T rounds, 40 Inferno planted T rounds, 276 ranked-eligible comparable features, 25 ranked findings, and `ready_for_stage_8_11 = true`;
-- 241 tests passing and `ruff check .` passing.
+- 1 Stage 8.10.1 hardening pass with 2,760 raw candidates, 79 tactical concepts, 349 consolidated findings, 9 hardened ranked findings, 2,411 redundant candidates collapsed, 1,130 late-window candidates downgraded, 15 taxonomy corrections, 0 critical failures, and `ready_for_stage_8_11 = true`;
+- 249 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -82,6 +83,7 @@ python -m src.validation.multi_map_gold_gate --config configs/project.yaml --tar
 python -m src.validation.map_feature_quality_gate --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.validation.feature_materialization_repair --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.analysis.multi_map_tactical_eda --config configs/project.yaml --target-team Vitality --map Mirage --map Inferno --force
+python -m src.analysis.tactical_finding_hardening --config configs/project.yaml --target-team Vitality --map Mirage --map Inferno --force
 ```
 
 Important dependency rules:
@@ -109,6 +111,7 @@ Important dependency rules:
 - Stage 8.9 reads the scoped Gold outputs from Stage 8.8 and writes only validation outputs. It checks integrity, missingness, domains, degeneracy, semantic health, labels, sample size, cross-map sanity, read-only fingerprints, and Mirage regression status. It does not rebuild features, change mappings, train models, produce predictions, or make tactical conclusions.
 - Stage 8.9.1 repairs upstream feature materialization defects found by Stage 8.9: flash/HE utility usage, score before round, and explicit utility endpoint capability metadata. It does not relax quality thresholds, train models, produce tactical conclusions, change map mappings, build dashboards, or export to BigQuery.
 - Stage 8.10 reads the repaired multi-map Gold outputs and writes only analysis outputs under `data/gold/analysis/multi_map_tactical_eda/`, plus a report and notebook. It does not modify core Gold, map registries, feature contracts, quality thresholds, model artifacts, dashboards, or BigQuery exports.
+- Stage 8.10.1 reads Stage 8.10 outputs and writes only hardening outputs under `data/gold/analysis/tactical_finding_hardening/`, plus a report and notebook. It consolidates redundant raw candidates into tactical concepts, applies exposure/demo/opponent caveats, fixes direction text, and does not perform model training or feature selection.
 
 ## MVP Scope
 
@@ -2163,3 +2166,93 @@ Interpretation guardrails:
 - Findings are descriptive, demo-aware, and non-causal.
 - Ranked findings exclude unresolved endpoint utility and active structural-review semantic comparisons.
 - Stage 8.10 is ready to inform Stage 8.11, but it does not train or select an Inferno model.
+
+## Stage 8.10.1 -- Tactical Finding Consolidation & Evidence Hardening
+
+Stage 8.10.1 consumes Stage 8.10 outputs and turns raw statistical comparison rows into tactical evidence units. It exists because one feature window is not one tactical finding: several windows and cohorts can describe the same underlying concept, such as early smoke usage or B-pressure progression.
+
+Run:
+
+```bash
+python -m src.analysis.tactical_finding_hardening --config configs/project.yaml --target-team Vitality --map Mirage --map Inferno --force
+```
+
+Useful options:
+
+```bash
+python -m src.analysis.tactical_finding_hardening --config configs/project.yaml --target-team Vitality --map Mirage --map Inferno --dry-run
+python -m src.analysis.tactical_finding_hardening --config configs/project.yaml --target-team Vitality --map de_mirage --map de_inferno --hardening-config configs/analysis/tactical_finding_hardening.yaml --force
+```
+
+The requested map order is preserved. For the standard run, `Mirage` is the reference map and `Inferno` is the comparison map. Hardened texts name maps explicitly and do not use vague "first map" or "second map" wording. First-event timing features such as `first_smoke_time` use temporal language: lower seconds means earlier, higher seconds means later.
+
+Stage 8.10.1 remains read-only for core Gold and Stage 8.10 outputs. It does not modify feature engineering outputs, round state, side datasets, map registries, feature contracts, quality thresholds, model artifacts, dashboards, or BigQuery exports.
+
+Outputs:
+
+```text
+data/gold/analysis/tactical_finding_hardening/raw_finding_evidence.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/finding_direction_consistency.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/tactical_finding_groups.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/finding_opponent_sensitivity.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/finding_demo_sensitivity.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/hardened_cross_map_site_patterns.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/finding_exclusion_audit.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/consolidated_tactical_findings.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/tactical_finding_supporting_evidence.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/tactical_finding_contradictions.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/hardened_tactical_finding_ranking.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/modeling_context_findings.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/tactical_finding_hardening_read_only_audit.{csv,parquet}
+data/gold/analysis/tactical_finding_hardening/tactical_finding_hardening_audit.{csv,parquet}
+```
+
+Docs/notebook:
+
+```text
+docs/vitality_multi_map_tactical_findings.md
+notebooks/26_tactical_finding_hardening.ipynb
+```
+
+Current Stage 8.10.1 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Stage 8.10 passed | true |
+| Raw Stage 8.10 candidates | 2,760 |
+| Raw Stage 8.10 ranked findings | 25 |
+| Tactical concepts | 79 |
+| Consolidated findings | 349 |
+| Hardened ranked findings | 9 |
+| High descriptive findings | 10 |
+| Moderate descriptive findings | 41 |
+| Tentative findings | 166 |
+| Redundant candidates collapsed | 2,411 |
+| Late-window candidates checked | 1,130 |
+| Late-window candidates downgraded | 1,130 |
+| Opponent-sensitive findings | 0 |
+| Demo-fragile findings | 59 |
+| Direction conflicts | 32 |
+| Cross-map flat A/B pattern rejections | 161 |
+| Exclusion taxonomy corrections | 15 |
+| Core Gold unchanged | true |
+| Stage 8.10 outputs unchanged | true |
+| Critical failures | 0 |
+| ready_for_stage_8_11 | true |
+| Status | passed |
+
+Top hardened concepts currently include:
+
+- `utility.smoke.early_usage`
+- `utility.smoke.first_timing`
+- `semantic.b_pressure.player_presence.mid`
+- `utility.molotov.early_usage`
+- `utility.molotov.mid_usage`
+- `site_choice.distribution`
+
+Important caveats:
+
+- `opponent` is currently `unknown` in the T-side feature rows, so opponent sensitivity is recorded as insufficient metadata rather than evidence of single-opponent dependency.
+- Late windows without enough exposure are downgraded and cannot become high-confidence tactical findings.
+- Outcome-adjacent features, such as late `players_alive_*` and round duration, are not promoted as top tactical-strategy findings without review.
+- Hardened findings are modeling context only. Stage 8.11 must still choose features through contract, horizon, leakage safety, and sample constraints.

@@ -1,0 +1,38 @@
+hardening_version: v1
+
+temporal:
+  late_window_start_seconds: 75
+  minimum_exposure_share: 0.70
+  representative_window_policy: earliest_supported_or_max_effect
+
+time_bands:
+  early_end: 35
+  mid_end: 75
+
+consolidation:
+  enabled: true
+  max_findings_per_concept: 1
+  require_same_direction_within_concept: true
+
+evidence:
+  high_min_demo_agreement: 0.75
+  moderate_min_demo_agreement: 0.60
+  minimum_effect_strength: 0.147
+
+opponent_sensitivity:
+  dominant_share_warning: 0.50
+  minimum_opponents: 2
+
+site_pattern:
+  zero_effect_epsilon: 1.0e-9
+
+ranking:
+  max_consolidated_findings: 15
+  max_findings_per_category: 4
+
+notes:
+  motivation: >
+    Stage 8.10.1 turns raw Stage 8.10 statistical rows into consolidated,
+    auditable tactical evidence units. It preserves the source EDA and core
+    Gold artifacts, hardens temporal exposure, map direction, opponent/demo
+    sensitivity, and keeps EDA separate from model feature selection.
