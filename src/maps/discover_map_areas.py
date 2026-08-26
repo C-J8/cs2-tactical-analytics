@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import warnings
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +12,11 @@ from src.config.schemas import load_project_config
 from src.maps.identity import resolve_map_identity, same_map
 from src.maps.place_columns import PLACE_COLUMN_CANDIDATES, detect_place_column
 from src.maps.registry import MapRegistry, load_map_registry, normalize_id
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import ensure_dir, read_table_pair
 from src.utils.logging import configure_logging
+from src.utils.notebooks import code, md, notebook_json
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc
 
 
 OUTPUT_NAMES = [
@@ -791,12 +792,11 @@ def load_persisted_frames(output_dir: Path, *, fallback: dict[str, pd.DataFrame]
 
 
 def read_optional(path: Path) -> pd.DataFrame:
-    if path.exists():
-        return read_catalog(path)
-    csv = path.with_suffix(".csv")
-    if csv.exists():
-        return read_catalog(csv)
-    return pd.DataFrame()
+    base_path = path.with_suffix("")
+    try:
+        return read_table_pair(base_path)
+    except FileNotFoundError:
+        return pd.DataFrame()
 
 
 def sanitize_for_parquet(frame: pd.DataFrame) -> pd.DataFrame:
@@ -971,8 +971,7 @@ def build_notebook_json() -> str:
         md("## Final Readiness"),
         code("display(scoped(audit))"),
     ]
-    notebook = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}, "language_info": {"name": "python", "version": "3.11"}}, "nbformat": 4, "nbformat_minor": 5}
-    return json.dumps(notebook, indent=1) + "\n"
+    return notebook_json(cells) + "\n"
 
 
 def write_text(content: str, path: Path, *, force: bool) -> Path:
@@ -983,22 +982,7 @@ def write_text(content: str, path: Path, *, force: bool) -> Path:
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 20) -> str:
-    if frame.empty:
-        return "_No rows._"
-    available = [column for column in columns if column in frame.columns]
-    return frame[available].head(top_n).to_markdown(index=False)
-
-
-def md(source: str) -> dict[str, object]:
-    return {"cell_type": "markdown", "metadata": {}, "source": source.splitlines(keepends=True)}
-
-
-def code(source: str) -> dict[str, object]:
-    return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": source.splitlines(keepends=True)}
-
-
-def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def build_empty_frames(*, identity, target_team: str) -> dict[str, pd.DataFrame]:

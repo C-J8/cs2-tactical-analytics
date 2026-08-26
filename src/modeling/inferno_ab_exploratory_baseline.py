@@ -5,7 +5,6 @@ import hashlib
 import json
 import pickle
 import warnings
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -21,9 +20,11 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from src.config.schemas import load_project_config
-from src.modeling.build_map_ab_dataset import run_build_map_ab_dataset, write_outputs
-from src.utils.io import ensure_dir
+from src.modeling.build_map_ab_dataset import run_build_map_ab_dataset
+from src.utils.io import ensure_dir, read_optional_table, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.notebooks import code, md, write_notebook as write_notebook_file
+from src.utils.reports import now_utc
 
 
 warnings.filterwarnings("ignore", message="'penalty' was deprecated.*", category=FutureWarning)
@@ -153,7 +154,7 @@ def run_inferno_ab_exploratory_baseline(
     ordered = {name: frames.get(name, pd.DataFrame()) for name in OUTPUT_NAMES}
     outputs: dict[str, Path] = {}
     if not dry_run:
-        outputs = write_outputs(ordered, output_dir, force=force)
+        outputs = write_dataframe_outputs(ordered, output_dir, force=force)
         write_report(project_root / "docs" / "inferno_ab_exploratory_baseline.md", ordered, model_config, force=force)
         write_notebook(project_root / "notebooks" / "27_inferno_ab_exploratory_baseline.ipynb", force=force)
     summary = {
@@ -733,75 +734,53 @@ def write_report(path: Path, frames: dict[str, pd.DataFrame], model_config: dict
 
 
 def write_notebook(path: Path, *, force: bool) -> None:
-    if path.exists() and not force:
-        return
-    ensure_dir(path.parent)
-    notebook = {
-        "cells": [
-            md("# Stage 8.11 -- Inferno A/B Exploratory Baseline"),
-            code("import pandas as pd\nfrom pathlib import Path\nbase = Path('../data/gold/modeling/inferno_ab_exploratory')"),
-            code("dataset = pd.read_parquet(base / 'inferno_ab_model_dataset.parquet')\ndataset.shape"),
-            code("dataset['label'].value_counts()"),
-            code("pd.read_parquet(base / 'inferno_ab_group_audit.parquet')"),
-            code("pd.read_parquet(base / 'inferno_ab_feature_set_audit.parquet')"),
-            code("pd.read_parquet(base / 'inferno_ab_oof_metrics.parquet')"),
-            code("pd.read_parquet(base / 'inferno_ab_fold_metrics.parquet')"),
-            code(
-                "import matplotlib.pyplot as plt\n"
-                "oof = pd.read_parquet(base / 'inferno_ab_oof_predictions.parquet')\n"
-                "cm = pd.crosstab(oof['true_label'], oof['predicted_label'])\n"
-                "fig, ax = plt.subplots(figsize=(4, 4))\n"
-                "ax.imshow(cm.reindex(index=['A','B'], columns=['A','B'], fill_value=0), cmap='Blues')\n"
-                "ax.set_xticks([0,1], ['A','B'])\n"
-                "ax.set_yticks([0,1], ['A','B'])\n"
-                "ax.set_xlabel('Predicted')\n"
-                "ax.set_ylabel('True')\n"
-                "ax.set_title('OOF confusion matrix')\n"
-                "for i in range(2):\n"
-                "    for j in range(2):\n"
-                "        ax.text(j, i, int(cm.reindex(index=['A','B'], columns=['A','B'], fill_value=0).iloc[i, j]), ha='center', va='center')\n"
-                "plt.tight_layout()"
-            ),
-            code(
-                "null = pd.read_parquet(base / 'inferno_ab_null_permutation.parquet')\n"
-                "obs = pd.read_parquet(base / 'inferno_ab_oof_metrics.parquet').iloc[0]['macro_f1']\n"
-                "fig, ax = plt.subplots(figsize=(7, 4))\n"
-                "ax.hist(null['macro_f1'], bins=25, alpha=0.8)\n"
-                "ax.axvline(obs, color='crimson', linewidth=2)\n"
-                "ax.set_title('Exploratory null comparison')\n"
-                "ax.set_xlabel('Permutation macro F1')\n"
-                "plt.tight_layout()"
-            ),
-            code("pd.read_parquet(base / 'inferno_ab_coefficient_stability.parquet')"),
-            code("pd.read_parquet(base / 'inferno_ab_exploratory_model_audit.parquet')"),
-        ],
-        "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}, "language_info": {"name": "python"}},
-        "nbformat": 4,
-        "nbformat_minor": 5,
-    }
-    path.write_text(json.dumps(notebook, indent=2), encoding="utf-8")
-
-
-def md(source: str) -> dict[str, Any]:
-    return {"cell_type": "markdown", "metadata": {}, "source": [source]}
-
-
-def code(source: str) -> dict[str, Any]:
-    return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": [source]}
+    cells = [
+        md("# Stage 8.11 -- Inferno A/B Exploratory Baseline"),
+        code("import pandas as pd\nfrom pathlib import Path\nbase = Path('../data/gold/modeling/inferno_ab_exploratory')"),
+        code("dataset = pd.read_parquet(base / 'inferno_ab_model_dataset.parquet')\ndataset.shape"),
+        code("dataset['label'].value_counts()"),
+        code("pd.read_parquet(base / 'inferno_ab_group_audit.parquet')"),
+        code("pd.read_parquet(base / 'inferno_ab_feature_set_audit.parquet')"),
+        code("pd.read_parquet(base / 'inferno_ab_oof_metrics.parquet')"),
+        code("pd.read_parquet(base / 'inferno_ab_fold_metrics.parquet')"),
+        code(
+            "import matplotlib.pyplot as plt\n"
+            "oof = pd.read_parquet(base / 'inferno_ab_oof_predictions.parquet')\n"
+            "cm = pd.crosstab(oof['true_label'], oof['predicted_label'])\n"
+            "fig, ax = plt.subplots(figsize=(4, 4))\n"
+            "ax.imshow(cm.reindex(index=['A','B'], columns=['A','B'], fill_value=0), cmap='Blues')\n"
+            "ax.set_xticks([0,1], ['A','B'])\n"
+            "ax.set_yticks([0,1], ['A','B'])\n"
+            "ax.set_xlabel('Predicted')\n"
+            "ax.set_ylabel('True')\n"
+            "ax.set_title('OOF confusion matrix')\n"
+            "for i in range(2):\n"
+            "    for j in range(2):\n"
+            "        ax.text(j, i, int(cm.reindex(index=['A','B'], columns=['A','B'], fill_value=0).iloc[i, j]), ha='center', va='center')\n"
+            "plt.tight_layout()"
+        ),
+        code(
+            "null = pd.read_parquet(base / 'inferno_ab_null_permutation.parquet')\n"
+            "obs = pd.read_parquet(base / 'inferno_ab_oof_metrics.parquet').iloc[0]['macro_f1']\n"
+            "fig, ax = plt.subplots(figsize=(7, 4))\n"
+            "ax.hist(null['macro_f1'], bins=25, alpha=0.8)\n"
+            "ax.axvline(obs, color='crimson', linewidth=2)\n"
+            "ax.set_title('Exploratory null comparison')\n"
+            "ax.set_xlabel('Permutation macro F1')\n"
+            "plt.tight_layout()"
+        ),
+        code("pd.read_parquet(base / 'inferno_ab_coefficient_stability.parquet')"),
+        code("pd.read_parquet(base / 'inferno_ab_exploratory_model_audit.parquet')"),
+    ]
+    write_notebook_file(path, cells, force=force)
 
 
 def read_optional(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
+    return read_optional_table(path)
 
 
 def file_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def print_summary(summary: dict[str, Any], outputs: dict[str, Path]) -> None:

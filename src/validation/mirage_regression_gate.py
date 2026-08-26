@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
@@ -21,6 +20,8 @@ from src.maps.registry import normalize_id
 from src.parsing.parse_quality import run_quality_pipeline
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc
 
 
 BASELINE_VERSION = "mirage_mvp_map_ready_v1"
@@ -1078,10 +1079,7 @@ def build_report(frames: dict[str, pd.DataFrame]) -> str:
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 30) -> str:
-    if frame.empty:
-        return "_No rows._"
-    available = [column for column in columns if column in frame.columns]
-    return frame[available].head(top_n).to_markdown(index=False)
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def build_notebook_json() -> str:
@@ -1122,10 +1120,6 @@ def md(source: str) -> dict[str, object]:
 
 def code(source: str) -> dict[str, object]:
     return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": source.splitlines(keepends=True)}
-
-
-def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def print_summary(outputs: dict[str, Path], summary: dict[str, int]) -> None:

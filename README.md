@@ -48,6 +48,18 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
+## Repository Organization Notes
+
+The repository has an initial simplification pass focused on reducing duplication without changing pipeline behavior across analysis, modeling, reporting, validation, and shared utilities:
+
+- shared table I/O helpers live in `src/utils/io.py`;
+- shared report helpers live in `src/utils/reports.py`;
+- shared output-free notebook helpers live in `src/utils/notebooks.py`;
+- notebooks are treated as lightweight inspection views, not source-of-truth reports;
+- the notebook inventory is tracked in `docs/notebook_inventory.md`.
+
+The 27 stage notebooks are intentionally committed without outputs. Current analysis should prefer the latest generated Gold tables and Markdown reports, while older notebooks remain historical stage views until their workflows are fully consolidated.
+
 ## Official Pipeline Order
 
 After local archives/demos are available, rebuild the current pipeline in this order:

@@ -5,7 +5,6 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +15,10 @@ import yaml
 from src.config.schemas import load_project_config
 from src.maps.identity import resolve_map_identity
 from src.storage.scoped_gold import content_hash, map_id_series, schema_hash
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import ensure_dir, read_optional_table, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc, safe_divide as shared_safe_divide
 
 
 OUTPUT_NAMES = [
@@ -273,9 +274,7 @@ def load_inputs(gold_dir: Path) -> dict[str, pd.DataFrame]:
 
 
 def read_optional(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame()
-    return read_catalog(path)
+    return read_optional_table(path)
 
 
 def validate_preconditions(
@@ -1362,7 +1361,7 @@ def build_final_audit(
                 "modeling_readiness_level": carried_modeling_readiness(inventory),
                 "ready_for_stage_8_11": ready,
                 "status": "passed" if ready else "failed",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": now_utc(),
             }
         ]
     )
@@ -1401,14 +1400,7 @@ def numeric_quantile(values: pd.Series | np.ndarray | list[object] | None, q: fl
 
 
 def safe_divide(numerator: object, denominator: object) -> float | None:
-    try:
-        if denominator is None or pd.isna(denominator) or float(denominator) == 0:
-            return None
-        if numerator is None or pd.isna(numerator):
-            return None
-        return float(numerator) / float(denominator)
-    except (TypeError, ValueError):
-        return None
+    return shared_safe_divide(numerator, denominator)
 
 
 def safe_subtract(right: object, left: object) -> float | None:
@@ -1614,18 +1606,8 @@ def summary_stats_prefixed(frame: pd.DataFrame, features: list[str]) -> dict[str
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs = {}
-    for name in OUTPUT_NAMES:
-        frame = sanitize_for_parquet(frames.get(name, pd.DataFrame()))
-        for suffix in ["csv", "parquet"]:
-            path = output_dir / f"{name}.{suffix}"
-            if path.exists() and not force:
-                outputs[f"{name}_{suffix}"] = path
-                continue
-            frame.to_csv(path, index=False) if suffix == "csv" else frame.to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    sanitized = {name: sanitize_for_parquet(frames.get(name, pd.DataFrame())) for name in OUTPUT_NAMES}
+    return write_dataframe_outputs(sanitized, output_dir, force=force)
 
 
 def sanitize_for_parquet(frame: pd.DataFrame) -> pd.DataFrame:
@@ -1739,10 +1721,7 @@ def semantic_section(profile: pd.DataFrame, semantic_id: str) -> str:
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 20) -> str:
-    if frame.empty:
-        return "_No rows._"
-    available = [column for column in columns if column in frame.columns]
-    return frame[available].head(top_n).to_markdown(index=False)
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def write_markdown_report(report: str, path: Path, *, force: bool) -> Path:

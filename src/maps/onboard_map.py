@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -13,8 +11,11 @@ from src.features.map_refactor_audit import load_candidate_feature_set, load_fea
 from src.maps.identity import same_map
 from src.maps.registry import MapRegistry, load_map_registry, normalize_id, validate_map_registry
 from src.maps.semantic import resolve_feature_requirements
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import ensure_dir, read_catalog, read_table_pair, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.notebooks import code, md, notebook_json
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc
 
 
 OUTPUT_NAMES = [
@@ -665,12 +666,11 @@ def build_summary(
 
 
 def read_optional(path: Path) -> pd.DataFrame:
-    if path.exists():
-        return read_catalog(path)
-    csv = path.with_suffix(".csv")
-    if csv.exists():
-        return read_catalog(csv)
-    return pd.DataFrame()
+    base_path = path.with_suffix("")
+    try:
+        return read_table_pair(base_path)
+    except FileNotFoundError:
+        return pd.DataFrame()
 
 
 def filter_team_map(df: pd.DataFrame, *, target_team: str, registry: MapRegistry, map_column: str) -> pd.DataFrame:
@@ -757,21 +757,9 @@ def contract_version(feature_contract: pd.DataFrame) -> str:
     return "unknown"
 
 
-def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs: dict[str, Path] = {}
-    for name in OUTPUT_NAMES:
-        frame = sanitize_for_parquet(frames[name])
-        for suffix in ["csv", "parquet"]:
-            path = output_dir / f"{name}.{suffix}"
-            if force or not path.exists():
-                frame.to_csv(path, index=False) if suffix == "csv" else frame.to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    sanitized = {name: sanitize_for_parquet(frames[name]) for name in OUTPUT_NAMES}
+    return write_dataframe_outputs(sanitized, output_dir, force=force)
 
 
 def sanitize_for_parquet(frame: pd.DataFrame) -> pd.DataFrame:
@@ -918,23 +906,11 @@ def build_notebook_json() -> str:
             "    print('No verified Inferno coordinate regions are available yet; registry currently uses unresolved named-area placeholders.')"
         ),
     ]
-    notebook = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}, "language_info": {"name": "python", "version": "3.11"}}, "nbformat": 4, "nbformat_minor": 5}
-    return json.dumps(notebook, indent=1) + "\n"
+    return notebook_json(cells) + "\n"
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 20) -> str:
-    if frame.empty:
-        return "_No rows._"
-    available = [column for column in columns if column in frame.columns]
-    return frame[available].head(top_n).to_markdown(index=False)
-
-
-def md(source: str) -> dict[str, object]:
-    return {"cell_type": "markdown", "metadata": {}, "source": source.splitlines(keepends=True)}
-
-
-def code(source: str) -> dict[str, object]:
-    return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": source.splitlines(keepends=True)}
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def parse_args() -> argparse.Namespace:

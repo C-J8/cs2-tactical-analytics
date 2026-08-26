@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -12,8 +11,9 @@ import pandas as pd
 import yaml
 
 from src.config.schemas import load_project_config
-from src.utils.io import ensure_dir
 from src.utils.logging import configure_logging
+from src.utils.io import read_optional_table, read_table_pair, write_dataframe_outputs
+from src.utils.reports import now_utc, safe_divide
 
 
 LABEL_VALUES = ("A", "B")
@@ -162,19 +162,11 @@ def load_model_config(path: Path) -> dict[str, Any]:
 
 
 def read_gold_table(path_without_suffix: Path) -> pd.DataFrame:
-    parquet = path_without_suffix.with_suffix(".parquet")
-    csv = path_without_suffix.with_suffix(".csv")
-    if parquet.exists():
-        return pd.read_parquet(parquet)
-    if csv.exists():
-        return pd.read_csv(csv)
-    raise FileNotFoundError(f"Gold table not found: {parquet}")
+    return read_table_pair(path_without_suffix)
 
 
 def read_optional(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
+    return read_optional_table(path)
 
 
 def filter_model_scope(
@@ -473,15 +465,7 @@ def build_experiment_fingerprint(dataset: pd.DataFrame, model_config: dict[str, 
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs = {}
-    for name, frame in frames.items():
-        for suffix in ("csv", "parquet"):
-            path = output_dir / f"{name}.{suffix}"
-            if force or not path.exists():
-                frame.to_csv(path, index=False) if suffix == "csv" else frame.to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    return write_dataframe_outputs(frames, output_dir, force=force)
 
 
 def to_float(value: object) -> float | None:
@@ -491,14 +475,6 @@ def to_float(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
-
-def safe_divide(numerator: int | float, denominator: int | float) -> float | None:
-    return float(numerator / denominator) if denominator else None
-
-
-def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def print_summary(summary: dict[str, Any], outputs: dict[str, Path]) -> None:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +10,10 @@ import pandas as pd
 import yaml
 
 from src.config.schemas import load_project_config
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import ensure_dir, read_catalog, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc
 
 
 OUTPUT_NAMES = [
@@ -809,7 +810,7 @@ def build_audit(
                 "config_written": True,
                 "report_written": True,
                 "status": status,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": now_utc(),
             }
         ]
     )
@@ -929,10 +930,7 @@ def build_markdown_report(frames: dict[str, pd.DataFrame]) -> str:
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 20) -> str:
-    if frame.empty:
-        return "_No rows available._"
-    available = [column for column in columns if column in frame.columns]
-    return frame[available].head(top_n).to_markdown(index=False)
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def build_notebook_json() -> str:
@@ -1007,18 +1005,7 @@ def code_cell(source: str) -> dict[str, Any]:
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs: dict[str, Path] = {}
-    for name in OUTPUT_NAMES:
-        for suffix in ["csv", "parquet"]:
-            path = output_dir / f"{name}.{suffix}"
-            if force or not path.exists():
-                if suffix == "csv":
-                    frames[name].to_csv(path, index=False)
-                else:
-                    frames[name].to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    return write_dataframe_outputs({name: frames[name] for name in OUTPUT_NAMES}, output_dir, force=force)
 
 
 def write_text(content: str, path: Path, *, force: bool) -> Path:

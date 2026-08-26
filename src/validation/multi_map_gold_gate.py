@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +9,9 @@ import pandas as pd
 from src.config.schemas import load_project_config
 from src.maps.identity import resolve_map_identity
 from src.storage.scoped_gold import GOLD_DATASET_SPECS, GoldDatasetSpec, content_hash, duplicate_key_count, map_id_series, schema_hash
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import read_catalog, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.reports import now_utc
 
 
 OUTPUT_NAMES = [
@@ -106,7 +106,7 @@ def capture_scope_fingerprints(gold_dir: Path, *, map_name: str, target_team: st
                 "key_hash": content_hash(scoped[keys], keys) if keys else content_hash(scoped),
                 "content_hash": content_hash(scoped, keys),
                 "schema_hash": schema_hash(scoped) if not scoped.empty else "",
-                "captured_at": datetime.now(timezone.utc).isoformat(),
+                "captured_at": now_utc(),
             }
         )
     return pd.DataFrame(rows)
@@ -537,7 +537,7 @@ def build_final_audit(
                 "ready_for_inferno_feature_quality_gate": ready,
                 "status": "ok" if ready else "failed",
                 "overall_status": "passed" if ready else "failed",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": now_utc(),
             }
         ]
     )
@@ -567,16 +567,7 @@ def value_counts(frame: pd.DataFrame, column: str) -> str:
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs = {}
-    for name in OUTPUT_NAMES:
-        frame = frames[name]
-        for suffix in ["csv", "parquet"]:
-            path = output_dir / f"{name}.{suffix}"
-            if force or not path.exists():
-                frame.to_csv(path, index=False) if suffix == "csv" else frame.to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    return write_dataframe_outputs({name: frames[name] for name in OUTPUT_NAMES}, output_dir, force=force)
 
 
 def print_summary(outputs: dict[str, Path], summary: dict[str, Any]) -> None:

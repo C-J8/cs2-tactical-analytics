@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +21,10 @@ from src.analysis.multi_map_tactical_eda import (
     sanitize_for_parquet,
 )
 from src.config.schemas import load_project_config
-from src.utils.io import ensure_dir
+from src.utils.io import read_optional_table, read_table_pair, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc, safe_divide as shared_safe_divide
 
 
 OUTPUT_NAMES = [
@@ -184,13 +185,7 @@ def load_stage_8_10_inputs(base_dir: Path) -> dict[str, pd.DataFrame]:
 
 
 def read_named_table(base_dir: Path, name: str) -> pd.DataFrame:
-    parquet = base_dir / f"{name}.parquet"
-    csv = base_dir / f"{name}.csv"
-    if parquet.exists():
-        return pd.read_parquet(parquet)
-    if csv.exists():
-        return pd.read_csv(csv)
-    raise FileNotFoundError(f"Required Stage 8.10 artifact not found: {parquet}")
+    return read_table_pair(base_dir / name)
 
 
 def validate_preconditions(
@@ -1116,7 +1111,7 @@ def build_final_audit(
                 "warnings": int(preconditions["status"].eq("warning").sum()),
                 "ready_for_stage_8_11": ready,
                 "status": "passed" if ready else "failed",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": now_utc(),
             }
         ]
     )
@@ -1154,18 +1149,8 @@ def build_combined_read_only_audit(
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs = {}
-    for name in OUTPUT_NAMES:
-        frame = sanitize_for_parquet(frames.get(name, pd.DataFrame()))
-        for suffix in ["csv", "parquet"]:
-            path = output_dir / f"{name}.{suffix}"
-            if path.exists() and not force:
-                outputs[f"{name}_{suffix}"] = path
-                continue
-            frame.to_csv(path, index=False) if suffix == "csv" else frame.to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    sanitized = {name: sanitize_for_parquet(frames.get(name, pd.DataFrame())) for name in OUTPUT_NAMES}
+    return write_dataframe_outputs(sanitized, output_dir, force=force)
 
 
 def load_round_features_for_sensitivity(gold_dir: Path, map_requests: list[MapRequest], target_team: str) -> pd.DataFrame:
@@ -1513,11 +1498,7 @@ def safe_subtract(left: object, right: object) -> float | None:
 
 
 def safe_divide(numerator: object, denominator: object) -> float | None:
-    numerator_number = safe_float(numerator)
-    denominator_number = safe_float(denominator)
-    if numerator_number is None or denominator_number in {None, 0.0}:
-        return None
-    return numerator_number / denominator_number
+    return shared_safe_divide(numerator, denominator)
 
 
 def normalized_value(value: object) -> str | None:
@@ -1586,13 +1567,7 @@ def human_feature(feature: str) -> str:
 
 
 def read_optional(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame()
-    if path.suffix == ".parquet":
-        return pd.read_parquet(path)
-    if path.suffix == ".csv":
-        return pd.read_csv(path)
-    return pd.DataFrame()
+    return read_optional_table(path) if path.suffix in {".parquet", ".csv"} else pd.DataFrame()
 
 
 def build_report(frames: dict[str, pd.DataFrame], *, target_team: str, map_requests: list[MapRequest]) -> str:
@@ -1677,13 +1652,7 @@ def build_report(frames: dict[str, pd.DataFrame], *, target_team: str, map_reque
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], top_n: int | None = None) -> str:
-    if frame.empty:
-        return "_No rows._"
-    available = [column for column in columns if column in frame.columns]
-    if not available:
-        return "_No requested columns available._"
-    view = frame[available].head(top_n) if top_n else frame[available]
-    return view.to_markdown(index=False)
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def build_notebook() -> str:

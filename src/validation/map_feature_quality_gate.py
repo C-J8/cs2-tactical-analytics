@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,8 @@ from src.maps.registry import load_yaml, normalize_id
 from src.storage.scoped_gold import GOLD_DATASET_SPECS, content_hash, duplicate_key_count, schema_hash
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc
 from src.validation.multi_map_gold_gate import load_gold_frames, scoped_team_map
 
 
@@ -1525,10 +1526,7 @@ def write_notebook(path: Path, *, force: bool) -> Path:
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 30) -> str:
-    if frame.empty:
-        return "_No rows._"
-    available = [column for column in columns if column in frame.columns]
-    return frame[available].head(top_n).to_markdown(index=False)
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def top_status(frame: pd.DataFrame) -> pd.DataFrame:
@@ -1587,10 +1585,6 @@ def range_overlap_share(left: pd.Series, right: pd.Series) -> float:
 
 def nunique(frame: pd.DataFrame, column: str) -> int:
     return int(frame[column].nunique(dropna=True)) if column in frame.columns and not frame.empty else 0
-
-
-def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def md(source: str) -> dict[str, object]:

@@ -25,8 +25,10 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from src.config.schemas import load_project_config
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import ensure_dir, read_catalog, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import safe_divide
 
 
 OUTPUT_NAMES = [
@@ -742,22 +744,11 @@ def build_markdown_report(frames: dict[str, pd.DataFrame], *, target_team: str, 
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 18) -> str:
-    if frame.empty:
-        return "_No rows available for the current configuration._"
-    available = [column for column in columns if column in frame.columns]
-    return frame[available].head(top_n).to_markdown(index=False)
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs: dict[str, Path] = {}
-    for name in OUTPUT_NAMES:
-        for suffix in ["csv", "parquet"]:
-            path = output_dir / f"{name}.{suffix}"
-            if force or not path.exists():
-                frames[name].to_csv(path, index=False) if suffix == "csv" else frames[name].to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    return write_dataframe_outputs({name: frames[name] for name in OUTPUT_NAMES}, output_dir, force=force)
 
 
 def write_markdown_report(report: str, path: Path, *, force: bool) -> None:
@@ -773,10 +764,6 @@ def concat_frames(frames: Iterable[pd.DataFrame], columns: list[str]) -> pd.Data
 
 def join_names(values: list[str]) -> str:
     return "|".join(values)
-
-
-def safe_divide(numerator: int | float, denominator: int | float) -> float | None:
-    return float(numerator / denominator) if denominator else None
 
 
 def model_display_name(model_key: str) -> str:

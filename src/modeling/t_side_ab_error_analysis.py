@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -9,8 +8,10 @@ import numpy as np
 import pandas as pd
 
 from src.config.schemas import load_project_config
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import ensure_dir, read_catalog, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc, safe_divide
 
 
 OUTPUT_NAMES = [
@@ -908,7 +909,7 @@ def build_analysis_audit(
                 "missing_optional_inputs": missing_text,
                 "unresolved_contrast_features": "|".join(unresolved_features) if unresolved_features else "none",
                 "status": status,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": now_utc(),
             }
         ]
     )
@@ -1007,22 +1008,11 @@ def metric_output_columns() -> list[str]:
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 20) -> str:
-    if frame.empty:
-        return "_No rows available for the current focus._"
-    available = [column for column in columns if column in frame.columns]
-    return frame[available].head(top_n).to_markdown(index=False)
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs: dict[str, Path] = {}
-    for name in OUTPUT_NAMES:
-        for suffix in ["csv", "parquet"]:
-            path = output_dir / f"{name}.{suffix}"
-            if force or not path.exists():
-                frames[name].to_csv(path, index=False) if suffix == "csv" else frames[name].to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    return write_dataframe_outputs({name: frames[name] for name in OUTPUT_NAMES}, output_dir, force=force)
 
 
 def write_markdown_report(report: str, path: Path, *, force: bool) -> None:
@@ -1033,10 +1023,6 @@ def write_markdown_report(report: str, path: Path, *, force: bool) -> None:
 
 def join_unique(values: pd.Series) -> str:
     return "|".join(sorted(set(values.dropna().astype(str))))
-
-
-def safe_divide(numerator: int | float, denominator: int | float) -> float | None:
-    return float(numerator / denominator) if denominator else None
 
 
 def print_summary(outputs: dict[str, Path], summary: dict[str, int]) -> None:

@@ -10,6 +10,56 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
+def read_table(path: Path, *, csv_dtype: str | None = None, keep_default_na: bool = True) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(f"Table not found: {path}")
+    suffix = path.suffix.lower()
+    if suffix == ".parquet":
+        return pd.read_parquet(path)
+    if suffix == ".csv":
+        return pd.read_csv(path, dtype=csv_dtype, keep_default_na=keep_default_na)
+    raise ValueError(f"Unsupported table format: {path}")
+
+
+def read_optional_table(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    return read_table(path)
+
+
+def read_table_pair(path_without_suffix: Path) -> pd.DataFrame:
+    parquet_path = path_without_suffix.with_suffix(".parquet")
+    csv_path = path_without_suffix.with_suffix(".csv")
+    if parquet_path.exists():
+        return pd.read_parquet(parquet_path)
+    if csv_path.exists():
+        return pd.read_csv(csv_path)
+    raise FileNotFoundError(f"Table not found: {parquet_path} or {csv_path}")
+
+
+def write_dataframe_outputs(
+    frames: dict[str, pd.DataFrame],
+    output_dir: Path,
+    *,
+    force: bool,
+    formats: tuple[str, ...] = ("csv", "parquet"),
+) -> dict[str, Path]:
+    ensure_dir(output_dir)
+    outputs: dict[str, Path] = {}
+    for name, frame in frames.items():
+        for suffix in formats:
+            path = output_dir / f"{name}.{suffix}"
+            if force or not path.exists():
+                if suffix == "csv":
+                    frame.to_csv(path, index=False)
+                elif suffix == "parquet":
+                    frame.to_parquet(path, index=False)
+                else:
+                    raise ValueError(f"Unsupported output format: {suffix}")
+            outputs[f"{name}_{suffix}"] = path
+    return outputs
+
+
 def write_catalog(df: pd.DataFrame, output_dir: Path, formats: list[str]) -> dict[str, Path]:
     ensure_dir(output_dir)
     outputs: dict[str, Path] = {}

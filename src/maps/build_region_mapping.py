@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import math
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +14,11 @@ from src.maps.build_map_registry import SEMANTIC_DESCRIPTIONS
 from src.maps.identity import resolve_map_identity
 from src.maps.registry import load_map_registry, load_yaml, normalize_id, registry_from_config, validate_map_registry
 from src.maps.semantic import place_lookup_from_registry, normalize_place
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import ensure_dir, read_catalog, read_table_pair
 from src.utils.logging import configure_logging
+from src.utils.notebooks import code, md, notebook_json
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc
 
 
 OUTPUT_NAMES = [
@@ -691,13 +692,10 @@ def build_audit(
 
 
 def read_with_fallback(base_path: Path) -> pd.DataFrame:
-    parquet = base_path.with_suffix(".parquet")
-    csv = base_path.with_suffix(".csv")
-    if parquet.exists():
-        return read_catalog(parquet)
-    if csv.exists():
-        return read_catalog(csv)
-    return pd.DataFrame()
+    try:
+        return read_table_pair(base_path)
+    except FileNotFoundError:
+        return pd.DataFrame()
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
@@ -903,10 +901,6 @@ def humanize_place(value: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def build_markdown_report(frames: dict[str, pd.DataFrame]) -> str:
     audit = frames["inferno_region_mapping_audit"]
     proposal = frames["inferno_region_mapping_proposal"]
@@ -1006,28 +1000,11 @@ def build_notebook_json() -> str:
         md("## Readiness"),
         code("display(audit.T)"),
     ]
-    notebook = {
-        "cells": cells,
-        "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}, "language_info": {"name": "python", "version": "3.11"}},
-        "nbformat": 4,
-        "nbformat_minor": 5,
-    }
-    return json.dumps(notebook, indent=1) + "\n"
+    return notebook_json(cells) + "\n"
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 20) -> str:
-    if frame.empty:
-        return "_No rows available._"
-    available = [column for column in columns if column in frame.columns]
-    return frame[available].head(top_n).to_markdown(index=False)
-
-
-def md(source: str) -> dict[str, object]:
-    return {"cell_type": "markdown", "metadata": {}, "source": source.splitlines(keepends=True)}
-
-
-def code(source: str) -> dict[str, object]:
-    return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": source.splitlines(keepends=True)}
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def print_summary(outputs: dict[str, Path], summary: dict[str, Any]) -> None:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -12,8 +11,10 @@ import polars as pl
 from src.config.schemas import load_project_config
 from src.maps.identity import resolve_map_identity, same_map, try_resolve_map_identity
 from src.maps.place_columns import PLACE_COLUMN_CANDIDATES, detect_place_column
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import ensure_dir, read_catalog, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.reports import markdown_table as report_markdown_table
+from src.utils.reports import now_utc
 
 
 OUTPUT_NAMES = [
@@ -521,16 +522,7 @@ def content_hash(frame: pd.DataFrame) -> str:
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs = {}
-    for name in OUTPUT_NAMES:
-        frame = frames[name]
-        for suffix in ["csv", "parquet"]:
-            path = output_dir / f"{name}.{suffix}"
-            if force or not path.exists():
-                frame.to_csv(path, index=False) if suffix == "csv" else frame.to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    return write_dataframe_outputs({name: frames[name] for name in OUTPUT_NAMES}, output_dir, force=force)
 
 
 def write_text(content: str, path: Path, *, force: bool) -> Path:
@@ -637,9 +629,7 @@ def build_notebook_json() -> str:
 
 
 def markdown_table(frame: pd.DataFrame, columns: list[str], *, top_n: int = 20) -> str:
-    if frame.empty:
-        return "_No rows._"
-    return frame[[column for column in columns if column in frame.columns]].head(top_n).to_markdown(index=False)
+    return report_markdown_table(frame, columns, top_n=top_n)
 
 
 def md(source: str) -> dict[str, object]:
@@ -648,10 +638,6 @@ def md(source: str) -> dict[str, object]:
 
 def code(source: str) -> dict[str, object]:
     return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": source.splitlines(keepends=True)}
-
-
-def now_utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def parse_args() -> argparse.Namespace:

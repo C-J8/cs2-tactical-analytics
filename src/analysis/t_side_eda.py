@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -10,8 +9,9 @@ import pandas as pd
 from src.config.schemas import load_project_config
 from src.features.feature_windows import FeatureWindow, configured_feature_windows
 from src.features.round_progression import expand_events_to_windows
-from src.utils.io import ensure_dir, read_catalog
+from src.utils.io import read_catalog, write_dataframe_outputs
 from src.utils.logging import configure_logging
+from src.utils.reports import now_utc, safe_divide
 
 
 OUTPUT_NAMES = [
@@ -611,7 +611,7 @@ def build_eda_audit(
                 "max_window_end": max_window_end,
                 "output_tables": len(frames) + 1,
                 "status": "ok" if planted_valid and max_window_end == 115 and len(rounds) == expected_rounds else "warning",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": now_utc(),
                 **output_rows,
             }
         ]
@@ -619,16 +619,7 @@ def build_eda_audit(
 
 
 def write_outputs(frames: dict[str, pd.DataFrame], output_dir: Path, *, force: bool) -> dict[str, Path]:
-    ensure_dir(output_dir)
-    outputs: dict[str, Path] = {}
-    for name in OUTPUT_NAMES:
-        frame = frames[name]
-        for suffix in ["csv", "parquet"]:
-            path = output_dir / f"{name}.{suffix}"
-            if force or not path.exists():
-                frame.to_csv(path, index=False) if suffix == "csv" else frame.to_parquet(path, index=False)
-            outputs[f"{name}_{suffix}"] = path
-    return outputs
+    return write_dataframe_outputs({name: frames[name] for name in OUTPUT_NAMES}, output_dir, force=force)
 
 
 def utility_region_group(row: pd.Series) -> str:
@@ -656,10 +647,6 @@ def outcome_winrate(rounds: pd.DataFrame, outcome: str) -> float | None:
 
 def mean_bool(values: pd.Series) -> float | None:
     return float(values.astype(float).mean()) if not values.empty else None
-
-
-def safe_divide(numerator: int | float, denominator: int | float) -> float | None:
-    return float(numerator / denominator) if denominator else None
 
 
 def empty_utility_summary() -> pd.DataFrame:
