@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.10.1 -- Tactical Finding Consolidation & Evidence Hardening**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.11 -- Inferno A/B Exploratory Baseline**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, a read-only Inferno feature-quality gate, a feature-materialization repair stage that restores flash/HE/score features without relaxing quality thresholds, a read-only multi-map tactical EDA comparing Vitality T-side behavior on Mirage vs Inferno, and hardened tactical finding consolidation that turns raw comparison rows into auditable tactical concepts. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, a read-only Inferno feature-quality gate, a feature-materialization repair stage that restores flash/HE/score features without relaxing quality thresholds, a read-only multi-map tactical EDA comparing Vitality T-side behavior on Mirage vs Inferno, hardened tactical finding consolidation that turns raw comparison rows into auditable tactical concepts, and a controlled Inferno A/B exploratory baseline at a fixed 35-second horizon. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -42,8 +42,9 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 - 1 Stage 8.9 Inferno feature-quality gate with 122 scoped Inferno rounds, 477 evaluated features, 4/4 required semantics healthy, 0 dataset-reconciliation failures, 0 domain failures, 0 temporal failures, 0 label conflicts, 0 unexpected missingness blockers, 166 warnings, `ready_for_multi_map_eda = true`, and `modeling_readiness_level = exploratory_only`;
 - 1 Stage 8.9.1 feature-materialization repair with flash and HE usage rebuilt from `grenades.parquet`, `score_diff_before_round` filled for all scoped Inferno rounds, explicit unresolved endpoint metadata, 0 failed repair checks, and the Inferno quality gate recovered to `status = passed`;
 - 1 Stage 8.10 read-only multi-map EDA with Mirage + Inferno, 17 Mirage demos, 5 Inferno demos, 180 Mirage T rounds, 65 Inferno T rounds, 98 Mirage planted T rounds, 40 Inferno planted T rounds, 276 ranked-eligible comparable features, 25 ranked findings, and `ready_for_stage_8_11 = true`;
-- 1 Stage 8.10.1 hardening pass with 2,760 raw candidates, 79 tactical concepts, 349 consolidated findings, 9 hardened ranked findings, 2,411 redundant candidates collapsed, 1,130 late-window candidates downgraded, 15 taxonomy corrections, 0 critical failures, and `ready_for_stage_8_11 = true`;
-- 249 tests passing and `ruff check .` passing.
+- 1 Stage 8.10.1 hardening pass with 2,760 raw candidates, 79 tactical concepts, 349 consolidated findings, 7 hardened ranked findings, 2,411 redundant candidates collapsed, 1,130 late-window candidates downgraded, 69 demo-fragile findings after real leave-one-demo-out sensitivity, 15 taxonomy corrections, 0 critical failures, and `ready_for_stage_8_11 = true`;
+- 1 Stage 8.11 Inferno A/B exploratory baseline with 40 high-confidence Inferno planted T-side rounds, 22 A / 18 B labels, 5 leave-one-series-out groups, 8 leakage-safe predictors at 35 seconds, OOF macro F1 `0.472`, balanced accuracy `0.472`, null percentile `0.470`, exploratory signal status `no_signal`, `model_status = exploratory_only`, and `ready_for_stage_8_12 = true`;
+- 257 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -84,6 +85,8 @@ python -m src.validation.map_feature_quality_gate --config configs/project.yaml 
 python -m src.validation.feature_materialization_repair --config configs/project.yaml --target-map Inferno --target-team Vitality --force
 python -m src.analysis.multi_map_tactical_eda --config configs/project.yaml --target-team Vitality --map Mirage --map Inferno --force
 python -m src.analysis.tactical_finding_hardening --config configs/project.yaml --target-team Vitality --map Mirage --map Inferno --force
+python -m src.modeling.build_map_ab_dataset --config configs/project.yaml --model-config configs/modeling/inferno_ab_exploratory.yaml --target-map Inferno --target-team Vitality --force
+python -m src.modeling.inferno_ab_exploratory_baseline --config configs/project.yaml --model-config configs/modeling/inferno_ab_exploratory.yaml --force
 ```
 
 Important dependency rules:
@@ -112,6 +115,7 @@ Important dependency rules:
 - Stage 8.9.1 repairs upstream feature materialization defects found by Stage 8.9: flash/HE utility usage, score before round, and explicit utility endpoint capability metadata. It does not relax quality thresholds, train models, produce tactical conclusions, change map mappings, build dashboards, or export to BigQuery.
 - Stage 8.10 reads the repaired multi-map Gold outputs and writes only analysis outputs under `data/gold/analysis/multi_map_tactical_eda/`, plus a report and notebook. It does not modify core Gold, map registries, feature contracts, quality thresholds, model artifacts, dashboards, or BigQuery exports.
 - Stage 8.10.1 reads Stage 8.10 outputs and writes only hardening outputs under `data/gold/analysis/tactical_finding_hardening/`, plus a report and notebook. It consolidates redundant raw candidates into tactical concepts, applies exposure/demo/opponent caveats, fixes direction text, and does not perform model training or feature selection.
+- Stage 8.11 reads the repaired Gold side datasets and hardened findings as context only. It builds a scoped Inferno/Vitality/T-side A/B modeling view, applies leakage and horizon audits, trains a fixed regularized logistic model with leave-one-series-out validation, and writes only `data/gold/modeling/inferno_ab_exploratory/`, `docs/inferno_ab_exploratory_baseline.md`, and `notebooks/27_inferno_ab_exploratory_baseline.ipynb`. It does not promote a model, tune hyperparameters, apply the Mirage model to Inferno, build dashboards, or export to BigQuery.
 
 ## MVP Scope
 
@@ -2223,15 +2227,15 @@ Current Stage 8.10.1 snapshot:
 | Raw Stage 8.10 ranked findings | 25 |
 | Tactical concepts | 79 |
 | Consolidated findings | 349 |
-| Hardened ranked findings | 9 |
+| Hardened ranked findings | 7 |
 | High descriptive findings | 10 |
-| Moderate descriptive findings | 41 |
-| Tentative findings | 166 |
+| Moderate descriptive findings | 32 |
+| Tentative findings | 170 |
 | Redundant candidates collapsed | 2,411 |
 | Late-window candidates checked | 1,130 |
 | Late-window candidates downgraded | 1,130 |
 | Opponent-sensitive findings | 0 |
-| Demo-fragile findings | 59 |
+| Demo-fragile findings | 69 |
 | Direction conflicts | 32 |
 | Cross-map flat A/B pattern rejections | 161 |
 | Exclusion taxonomy corrections | 15 |
@@ -2256,3 +2260,73 @@ Important caveats:
 - Late windows without enough exposure are downgraded and cannot become high-confidence tactical findings.
 - Outcome-adjacent features, such as late `players_alive_*` and round duration, are not promoted as top tactical-strategy findings without review.
 - Hardened findings are modeling context only. Stage 8.11 must still choose features through contract, horizon, leakage safety, and sample constraints.
+
+## Stage 8.11 -- Inferno A/B Exploratory Baseline
+
+Stage 8.11 builds the first controlled exploratory model for Vitality T-side Inferno planted-round A/B site labels. It is intentionally conservative: the prediction horizon is fixed at 35 seconds after freeze end, feature selection is predeclared from compact tactical families, validation is leave-one-series-out, and Stage 8.10/8.10.1 findings are used only as context rather than label-driven feature selection.
+
+Run the modeling dataset builder:
+
+```bash
+python -m src.modeling.build_map_ab_dataset --config configs/project.yaml --model-config configs/modeling/inferno_ab_exploratory.yaml --target-map Inferno --target-team Vitality --force
+```
+
+Run the exploratory baseline:
+
+```bash
+python -m src.modeling.inferno_ab_exploratory_baseline --config configs/project.yaml --model-config configs/modeling/inferno_ab_exploratory.yaml --force
+```
+
+Outputs:
+
+```text
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_model_dataset.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_label_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_group_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_feature_leakage_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_horizon_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_feature_set_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_oof_predictions.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_oof_metrics.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_null_summary.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_exploratory_model_audit.{csv,parquet}
+docs/inferno_ab_exploratory_baseline.md
+notebooks/27_inferno_ab_exploratory_baseline.ipynb
+```
+
+Current Stage 8.11 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Modeled rows | 40 |
+| A / B labels | 22 / 18 |
+| Grouping column | `series_id` |
+| Leave-one-series-out groups | 5 |
+| Fixed horizon | 35s |
+| Primary feature set | `compact_tactical_35s` |
+| Primary predictors | 8 |
+| OOF macro F1 | 0.472 |
+| OOF balanced accuracy | 0.472 |
+| Recall A / B | 0.500 / 0.444 |
+| Most-frequent dummy macro F1 | 0.355 |
+| Stratified dummy macro F1 | 0.437 |
+| Null median macro F1 | 0.486 |
+| Observed null percentile | 0.470 |
+| Macro F1 cluster-bootstrap CI | 0.401-0.525 |
+| Fold macro F1 range | 0.333-0.550 |
+| Exploratory signal status | `no_signal` |
+| model_status | `exploratory_only` |
+| ready_for_stage_8_12 | true |
+
+Interpretation: Stage 8.11 does not find reproducible early-round A/B signal in the current 40-round Inferno sample. The observed OOF macro F1 is below the null median and only slightly above the stratified dummy baseline, so this is evidence for sample expansion or readiness work rather than model promotion.
+
+Strict exclusions:
+
+- no hyperparameter search;
+- no horizon search;
+- no random train/test split;
+- no plant, outcome, label, raw-coordinate, endpoint, or post-horizon predictors;
+- no Mirage-to-Inferno model transfer;
+- no dashboard, Streamlit, BigQuery, deployment, or promoted model.
+
+The next stage should be chosen from this evidence. Given `exploratory_signal_status = no_signal`, the most natural next step is sample expansion and modeling-readiness work rather than trying to tune this model into a better headline metric.

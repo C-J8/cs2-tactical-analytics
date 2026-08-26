@@ -1,0 +1,81 @@
+experiment:
+  experiment_id: vitality_inferno_t_ab_exploratory_v1
+  model_id: vitality_inferno_t_ab_35s_exploratory_logistic_v1
+  target_map: Inferno
+  target_team: Vitality
+  target_side: T
+  label_column: target_site_model_label
+  output_subdir: inferno_ab_exploratory
+
+prediction:
+  primary_horizon_seconds: 35
+  reference_event: freeze_end
+
+validation:
+  strategy: leave_one_group_out
+  preferred_group_column: series_id
+  fallback_group_column: parse_id
+  minimum_valid_groups: 3
+
+model:
+  type: logistic_regression
+  penalty: l2
+  C: 0.1
+  solver: liblinear
+  max_iter: 5000
+  threshold: 0.5
+  class_weight:
+  random_state: 811
+
+null_test:
+  permutations: 1000
+  preserve_group_class_balance: true
+  random_state: 811
+
+bootstrap:
+  enabled: true
+  cluster_by_model_group: true
+  resamples: 2000
+  confidence_level: 0.95
+  random_state: 811
+
+feature_sets:
+  primary: compact_tactical_35s
+  compact_tactical_35s:
+    min_features: 6
+    max_features: 12
+    features:
+      - feature_name: score_diff_before_round
+        family: pre_round_context
+      - feature_name: team_total_utility_start
+        family: utility_inventory
+      - feature_name: smokes_used_0_35
+        family: early_utility_usage
+      - feature_name: flashes_used_0_35
+        family: early_utility_usage
+      - feature_name: molotovs_used_0_35
+        family: early_utility_usage
+      - feature_name: he_used_0_35
+        family: early_utility_usage
+      - feature_name: team_spread_35s
+        family: team_structure
+      - feature_name: avg_pairwise_distance_35s
+        family: team_structure
+      - feature_name: players_mid_control_0_35
+        family: semantic_control
+      - feature_name: players_a_pressure_0_35
+        family: semantic_control
+      - feature_name: players_b_pressure_0_35
+        family: semantic_control
+  ablations:
+    utility_context_35s:
+      - score_diff_before_round
+      - team_total_utility_start
+      - smokes_used_0_35
+      - flashes_used_0_35
+      - molotovs_used_0_35
+      - he_used_0_35
+    semantic_structure_35s:
+      - players_mid_control_0_35
+      - players_a_pressure_0_35
+      - players_b_pressure_0_35

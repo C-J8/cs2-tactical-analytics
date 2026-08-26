@@ -5,6 +5,7 @@ import pandas as pd
 from src.analysis.tactical_finding_hardening import (
     apply_hardened_quality,
     apply_temporal_exposure,
+    build_finding_demo_sensitivity,
     build_direction_consistency,
     build_hardened_cross_map_site_patterns,
     build_raw_finding_evidence,
@@ -105,6 +106,106 @@ def test_late_point_without_exposure_profile_is_blocked() -> None:
 
     assert bool(hardened.loc[0, "late_window_exposure_flag"]) is True
     assert bool(hardened.loc[0, "eligible_after_hardening"]) is False
+
+
+def test_fully_exposed_temporal_effect_is_calculated_when_possible() -> None:
+    inputs = stage_inputs(
+        candidates=[candidate("mm_eda_0010", "smokes_used_75_85", "t_side_all", "direct_feature")],
+        direct=[comparison("smokes_used_75_85", "t_side_all", inferno_median=3.0, mirage_median=1.0, effect=0.8)],
+    )
+    maps = [DummyMap("mirage", "Mirage"), DummyMap("inferno", "Inferno")]
+    raw = build_raw_finding_evidence(inputs, maps, SETTINGS)
+    temporal = pd.DataFrame(
+        [
+            {"feature_name": "smokes_used_75_85", "map_id": "mirage", "exposure_share": 1.0},
+            {"feature_name": "smokes_used_75_85", "map_id": "inferno", "exposure_share": 1.0},
+        ]
+    )
+    rounds = pd.DataFrame(
+        [
+            {"map_id": "mirage", "parse_id": f"m{i}", "smokes_used_75_85": i, "round_duration_seconds": 90}
+            for i in range(1, 5)
+        ]
+        + [
+            {"map_id": "inferno", "parse_id": f"i{i}", "smokes_used_75_85": i + 2, "round_duration_seconds": 90}
+            for i in range(1, 5)
+        ]
+    )
+
+    exposed = apply_temporal_exposure(raw, temporal, maps, SETTINGS, rounds=rounds)
+
+    assert bool(exposed.loc[0, "fully_exposed_analysis_available"]) is True
+    assert exposed.loc[0, "exposure_sensitivity_status"] == "stable"
+    assert exposed.loc[0, "fully_exposed_effect"] == 2.0
+
+
+def test_fully_exposed_temporal_reversal_is_detected() -> None:
+    settings = {**SETTINGS, "temporal": {"late_window_start_seconds": 75, "minimum_exposure_share": 0.40}}
+    inputs = stage_inputs(
+        candidates=[candidate("mm_eda_0011", "smokes_used_75_85", "t_side_all", "direct_feature")],
+        direct=[comparison("smokes_used_75_85", "t_side_all", inferno_median=3.0, mirage_median=1.0, effect=0.8)],
+    )
+    maps = [DummyMap("mirage", "Mirage"), DummyMap("inferno", "Inferno")]
+    raw = build_raw_finding_evidence(inputs, maps, SETTINGS)
+    temporal = pd.DataFrame(
+        [
+            {"feature_name": "smokes_used_75_85", "map_id": "mirage", "exposure_share": 0.50},
+            {"feature_name": "smokes_used_75_85", "map_id": "inferno", "exposure_share": 0.50},
+        ]
+    )
+    rounds = pd.DataFrame(
+        [
+            {"map_id": "mirage", "parse_id": f"m{i}", "smokes_used_75_85": 10, "round_duration_seconds": 90}
+            for i in range(3)
+        ]
+        + [
+            {"map_id": "inferno", "parse_id": f"i{i}", "smokes_used_75_85": 0, "round_duration_seconds": 90}
+            for i in range(3)
+        ]
+        + [
+            {"map_id": "mirage", "parse_id": f"ms{i}", "smokes_used_75_85": 0, "round_duration_seconds": 70}
+            for i in range(4)
+        ]
+        + [
+            {"map_id": "inferno", "parse_id": f"is{i}", "smokes_used_75_85": 20, "round_duration_seconds": 70}
+            for i in range(4)
+        ]
+    )
+
+    exposed = apply_temporal_exposure(raw, temporal, maps, settings, rounds=rounds)
+
+    assert exposed.loc[0, "exposure_sensitivity_status"] == "reversed"
+    assert bool(exposed.loc[0, "same_direction_after_exposure_filter"]) is False
+
+
+def test_real_leave_one_demo_out_removes_each_demo_and_counts_flips() -> None:
+    finding = pd.DataFrame(
+        [
+            {
+                **candidate("mm_eda_0012", "smokes_used_0_35", "t_side_all", "direct_feature"),
+                "direction": "higher",
+                "comparison_type": "cross_map",
+                "finding_concept_id": "utility.smokes.early",
+                "eligible_before_hardening": True,
+            }
+        ]
+    )
+    maps = [DummyMap("mirage", "Mirage"), DummyMap("inferno", "Inferno")]
+    rounds = pd.DataFrame(
+        [
+            {"map_id": "mirage", "parse_id": "m1", "smokes_used_0_35": 1},
+            {"map_id": "mirage", "parse_id": "m2", "smokes_used_0_35": 1},
+            {"map_id": "inferno", "parse_id": "i1", "smokes_used_0_35": 4},
+            {"map_id": "inferno", "parse_id": "i2", "smokes_used_0_35": 0},
+        ]
+    )
+
+    sensitivity = build_finding_demo_sensitivity(finding, rounds, maps).iloc[0]
+
+    assert sensitivity["sensitivity_method"] == "leave_one_demo_out"
+    assert int(sensitivity["demos_evaluated"]) == 4
+    assert int(sensitivity["leave_one_demo_out_checks"]) == 4
+    assert int(sensitivity["direction_flips"]) >= 1
 
 
 def test_early_windows_same_direction_consolidate_to_one_concept() -> None:

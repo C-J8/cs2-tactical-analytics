@@ -17,6 +17,7 @@ data/bronze/parse_manifest/
 data/silver/**/*.csv
 data/silver/**/*.parquet
 data/silver/parsed_demos/
+data/gold/
 data/gold/**/*.csv
 data/gold/**/*.parquet
 *.dem

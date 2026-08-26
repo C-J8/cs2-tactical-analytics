@@ -83,7 +83,8 @@ def run_tactical_finding_hardening(
     hardening_config: Path | None = None,
     map_registry: Path | None = None,
 ) -> tuple[dict[str, Path], dict[str, pd.DataFrame], dict[str, Any]]:
-    project_root = Path.cwd()
+    config_path = config_path.resolve()
+    project_root = config_path.parent.parent
     load_project_config(config_path)
     settings = load_hardening_settings(hardening_config or project_root / "configs" / "analysis" / "tactical_finding_hardening.yaml")
     registry_path = map_registry or project_root / "configs" / "maps" / "map_registry.yaml"
@@ -102,7 +103,7 @@ def run_tactical_finding_hardening(
     rounds = load_round_features_for_sensitivity(gold_dir, map_requests, target_team)
 
     raw = build_raw_finding_evidence(inputs, map_requests, settings)
-    raw = apply_temporal_exposure(raw, inputs["multi_map_temporal_profile"], map_requests, settings)
+    raw = apply_temporal_exposure(raw, inputs["multi_map_temporal_profile"], map_requests, settings, rounds=rounds)
     raw = apply_interpretation_metadata(raw, settings)
 
     site_patterns = build_hardened_cross_map_site_patterns(inputs["cross_map_site_pattern_comparison"], settings)
@@ -449,6 +450,7 @@ def apply_temporal_exposure(
     temporal: pd.DataFrame,
     map_requests: list[MapRequest],
     settings: dict[str, Any],
+    rounds: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if raw.empty:
         return raw
@@ -465,6 +467,10 @@ def apply_temporal_exposure(
     low_comps = []
     flags = []
     statuses = []
+    available = []
+    all_effects = []
+    fully_effects = []
+    same_directions = []
     for _, row in result.iterrows():
         end = safe_float(row.get("window_end"))
         is_late = end is not None and end >= late_start
@@ -478,26 +484,109 @@ def apply_temporal_exposure(
         low_refs.append(low_ref)
         low_comps.append(low_comp)
         flags.append(flag)
-        if not is_late:
-            statuses.append("not_applicable")
+        sensitivity = temporal_exposure_sensitivity(row, rounds, map_requests, threshold) if rounds is not None else {}
+        status = str(sensitivity.get("exposure_sensitivity_status") or "")
+        if not is_late and not status:
+            status = "not_applicable"
         elif flag:
-            statuses.append("insufficient_exposure")
+            status = "insufficient_exposure"
         elif ref_share is None or comp_share is None:
-            statuses.append("insufficient_exposure")
-        else:
-            statuses.append("stable")
+            status = "insufficient_exposure"
+        elif not status:
+            status = "stable"
+        statuses.append(status)
+        available.append(bool(sensitivity.get("fully_exposed_analysis_available", False)))
+        all_effects.append(sensitivity.get("all_round_effect", row.get("effect_size")))
+        fully_effects.append(sensitivity.get("fully_exposed_effect"))
+        same_directions.append(sensitivity.get("same_direction_after_exposure_filter"))
     result["reference_exposure_share"] = refs
     result["comparison_exposure_share"] = comps
     result["minimum_exposure_share"] = threshold
     result["low_exposure_reference"] = low_refs
     result["low_exposure_comparison"] = low_comps
     result["late_window_exposure_flag"] = flags
-    result["fully_exposed_analysis_available"] = False
-    result["all_round_effect"] = result["effect_size"]
-    result["fully_exposed_effect"] = None
-    result["same_direction_after_exposure_filter"] = None
+    result["fully_exposed_analysis_available"] = available
+    result["all_round_effect"] = all_effects
+    result["fully_exposed_effect"] = fully_effects
+    result["same_direction_after_exposure_filter"] = same_directions
     result["exposure_sensitivity_status"] = statuses
     return result
+
+
+def temporal_exposure_sensitivity(
+    finding: pd.Series,
+    rounds: pd.DataFrame | None,
+    map_requests: list[MapRequest],
+    minimum_exposure_share: float,
+) -> dict[str, object]:
+    feature = str(finding.get("feature_name"))
+    end = safe_float(finding.get("window_end"))
+    if rounds is None or rounds.empty or end is None or feature not in rounds.columns:
+        return {
+            "fully_exposed_analysis_available": False,
+            "all_round_effect": safe_float(finding.get("effect_size")),
+            "fully_exposed_effect": None,
+            "same_direction_after_exposure_filter": None,
+            "exposure_sensitivity_status": "not_applicable",
+        }
+    scoped = rows_for_cross_map_finding(rounds, finding, map_requests)
+    if scoped.empty:
+        return {
+            "fully_exposed_analysis_available": False,
+            "all_round_effect": safe_float(finding.get("effect_size")),
+            "fully_exposed_effect": None,
+            "same_direction_after_exposure_filter": None,
+            "exposure_sensitivity_status": "insufficient_exposure",
+        }
+    duration_col = "round_exposure_seconds" if "round_exposure_seconds" in scoped.columns else "round_duration_seconds"
+    if duration_col not in scoped.columns:
+        return {
+            "fully_exposed_analysis_available": False,
+            "all_round_effect": cross_map_median_difference(scoped, finding, map_requests),
+            "fully_exposed_effect": None,
+            "same_direction_after_exposure_filter": None,
+            "exposure_sensitivity_status": "not_applicable",
+        }
+    durations = pd.to_numeric(scoped[duration_col], errors="coerce")
+    fully = scoped[durations >= float(end)].copy()
+    all_effect = cross_map_median_difference(scoped, finding, map_requests)
+    full_direction = classify_difference(all_effect)
+    if fully.empty:
+        return {
+            "fully_exposed_analysis_available": False,
+            "all_round_effect": all_effect,
+            "fully_exposed_effect": None,
+            "same_direction_after_exposure_filter": None,
+            "exposure_sensitivity_status": "insufficient_exposure",
+        }
+    counts = fully.groupby("map_id")[feature].count().to_dict() if "map_id" in fully.columns else {}
+    shares = scoped.groupby("map_id").size().to_dict() if "map_id" in scoped.columns else {}
+    enough_rows = all(int(counts.get(request.map_id, 0)) >= 3 for request in map_requests[:2])
+    enough_share = all(safe_divide(counts.get(request.map_id, 0), shares.get(request.map_id, 0)) is not None and safe_divide(counts.get(request.map_id, 0), shares.get(request.map_id, 0)) >= minimum_exposure_share for request in map_requests[:2])
+    if not enough_rows or not enough_share:
+        return {
+            "fully_exposed_analysis_available": bool(enough_rows),
+            "all_round_effect": all_effect,
+            "fully_exposed_effect": cross_map_median_difference(fully, finding, map_requests) if enough_rows else None,
+            "same_direction_after_exposure_filter": None,
+            "exposure_sensitivity_status": "insufficient_exposure",
+        }
+    fully_effect = cross_map_median_difference(fully, finding, map_requests)
+    fully_direction = classify_difference(fully_effect)
+    same = bool(full_direction != "flat" and fully_direction == full_direction)
+    if not same:
+        status = "reversed"
+    elif abs(fully_effect or 0.0) < abs(all_effect or 0.0) * 0.5:
+        status = "weakened"
+    else:
+        status = "stable"
+    return {
+        "fully_exposed_analysis_available": True,
+        "all_round_effect": all_effect,
+        "fully_exposed_effect": fully_effect,
+        "same_direction_after_exposure_filter": same,
+        "exposure_sensitivity_status": status,
+    }
 
 
 def apply_interpretation_metadata(raw: pd.DataFrame, settings: dict[str, Any]) -> pd.DataFrame:
@@ -825,6 +914,7 @@ def build_finding_opponent_sensitivity(raw: pd.DataFrame, rounds: pd.DataFrame, 
 
 def build_finding_demo_sensitivity(raw: pd.DataFrame, rounds: pd.DataFrame, map_requests: list[MapRequest]) -> pd.DataFrame:
     rows = []
+    cache: dict[tuple[str, str, str], dict[str, object]] = {}
     for _, finding in raw.iterrows():
         if str(finding.get("category")) == "site_choice":
             rows.append(
@@ -838,31 +928,50 @@ def build_finding_demo_sensitivity(raw: pd.DataFrame, rounds: pd.DataFrame, map_
                     "stable_direction_after_demo_removal": True,
                     "direction_flips": 0,
                     "demo_fragile": False,
+                    "sensitivity_method": "not_applicable",
                     "status": "aggregate_context",
                 }
             )
             continue
-        agreement = safe_float(finding.get("demo_direction_agreement"))
-        reference_demos = safe_float(finding.get("reference_demos"))
-        comparison_demos = safe_float(finding.get("comparison_demos"))
-        demos = int(max([value for value in [reference_demos, comparison_demos] if value is not None], default=0))
-        if demos == 0 and not rounds.empty and str(finding.get("feature_name")) in rounds.columns:
-            scoped = rows_for_cross_map_finding(rounds, finding, map_requests)
-            demos = int(scoped["parse_id"].nunique(dropna=True)) if "parse_id" in scoped.columns else 0
-        stable = bool(demos >= 2 and (agreement is None or agreement >= 0.60))
-        fragile = not stable
+        feature = str(finding.get("feature_name"))
+        if rounds.empty or feature not in rounds.columns or not bool(finding.get("eligible_before_hardening", False)):
+            reference_demos = safe_float(finding.get("reference_demos"))
+            comparison_demos = safe_float(finding.get("comparison_demos"))
+            demos = int(max([value for value in [reference_demos, comparison_demos] if value is not None], default=0))
+            rows.append(
+                {
+                    "finding_id": finding.get("finding_id"),
+                    "finding_concept_id": finding.get("finding_concept_id"),
+                    "feature_name": finding.get("feature_name"),
+                    "cohort": finding.get("cohort"),
+                    "demos_evaluated": demos,
+                    "leave_one_demo_out_checks": 0,
+                    "stable_direction_after_demo_removal": False,
+                    "direction_flips": 0,
+                    "demo_fragile": False,
+                    "sensitivity_method": "not_available",
+                    "status": "not_evaluated",
+                }
+            )
+            continue
+        key = (feature, str(finding.get("cohort")), str(finding.get("comparison_type")))
+        sensitivity = cache.get(key)
+        if sensitivity is None:
+            sensitivity = demo_sensitivity_for_feature(finding, rounds, map_requests)
+            cache[key] = sensitivity
         rows.append(
             {
                 "finding_id": finding.get("finding_id"),
                 "finding_concept_id": finding.get("finding_concept_id"),
                 "feature_name": finding.get("feature_name"),
                 "cohort": finding.get("cohort"),
-                "demos_evaluated": demos,
-                "leave_one_demo_out_checks": demos,
-                "stable_direction_after_demo_removal": stable,
-                "direction_flips": 0 if stable else 1,
-                "demo_fragile": fragile,
-                "status": "ok" if stable else "warning",
+                "demos_evaluated": sensitivity["demos_evaluated"],
+                "leave_one_demo_out_checks": sensitivity["leave_one_demo_out_checks"],
+                "stable_direction_after_demo_removal": sensitivity["stable_direction_after_demo_removal"],
+                "direction_flips": sensitivity["direction_flips"],
+                "demo_fragile": sensitivity["demo_fragile"],
+                "sensitivity_method": sensitivity["sensitivity_method"],
+                "status": sensitivity["status"],
             }
         )
     return pd.DataFrame(rows)
@@ -885,6 +994,7 @@ def demo_sensitivity_for_feature(finding: pd.Series, rounds: pd.DataFrame, map_r
         "stable_direction_after_demo_removal": stable,
         "direction_flips": int(sum(value != full_direction and value != "flat" for value in removals)),
         "demo_fragile": fragile or len(removals) < 2,
+        "sensitivity_method": "leave_one_demo_out",
         "status": "warning" if fragile or len(removals) < 2 else "ok",
     }
 

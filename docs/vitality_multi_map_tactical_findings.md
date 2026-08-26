@@ -6,7 +6,7 @@ Consolidate Stage 8.10 raw statistical rows into auditable tactical evidence uni
 ## Input EDA
 | audit_id                      | target_team   | maps           | stage_8_10_passed   |   raw_candidates |   raw_ranked_findings |   finding_concepts |   consolidated_findings |   hardened_ranked_findings |   high_descriptive_findings |   moderate_descriptive_findings |   tentative_findings |   redundant_candidates_collapsed |   late_window_candidates_checked |   late_window_candidates_downgraded |   opponent_sensitive_findings |   demo_fragile_findings |   direction_conflicts |   cross_map_flat_pattern_rejections |   exclusion_taxonomy_changes | core_gold_unchanged   | stage_8_10_outputs_unchanged   |   critical_failures |   warnings | ready_for_stage_8_11   | status   | created_at                       |
 |:------------------------------|:--------------|:---------------|:--------------------|-----------------:|----------------------:|-------------------:|------------------------:|---------------------------:|----------------------------:|--------------------------------:|---------------------:|---------------------------------:|---------------------------------:|------------------------------------:|------------------------------:|------------------------:|----------------------:|------------------------------------:|-----------------------------:|:----------------------|:-------------------------------|--------------------:|-----------:|:-----------------------|:---------|:---------------------------------|
-| tactical_finding_hardening_v1 | Vitality      | Mirage,Inferno | True                |             2760 |                    25 |                 79 |                     349 |                          9 |                          10 |                              41 |                  166 |                             2411 |                             1130 |                                1130 |                             0 |                      59 |                    32 |                                 161 |                           15 | True                  | True                           |                   0 |          0 | True                   | passed   | 2026-08-25T22:33:08.117538+00:00 |
+| tactical_finding_hardening_v1 | Vitality      | Mirage,Inferno | True                |             2760 |                    25 |                 79 |                     349 |                          7 |                          10 |                              32 |                  170 |                             2411 |                             1130 |                                1130 |                             0 |                      69 |                    32 |                                 161 |                           15 | True                  | True                           |                   0 |          0 | True                   | passed   | 2026-08-25T23:30:24.252088+00:00 |
 
 ## Why Consolidation Was Needed
 A feature window is not a tactical finding. This stage collapses redundant windows/cohorts, hardens direction text, applies temporal exposure checks, and evaluates opponent/demo sensitivity.
@@ -55,17 +55,15 @@ Late windows are downgraded when either map has exposure below the configured th
 | plant_progression.players_alive.late                |                     1 | players_alive_115s       | lower                 | downgraded_exposure |
 
 ## Top Hardened Findings
-|   rank | finding_concept_id                                     | category          | representative_feature          | evidence_quality     | representative_text                                                                                                            |
-|-------:|:-------------------------------------------------------|:------------------|:--------------------------------|:---------------------|:-------------------------------------------------------------------------------------------------------------------------------|
-|      1 | utility.smoke.early_usage                              | direct_feature    | smokes_used_0_25                | high_descriptive     | smokes used 0 25 is lower on Inferno than Mirage; interpretation is non-causal.                                                |
-|      2 | utility.smoke.first_timing                             | direct_feature    | first_smoke_time                | high_descriptive     | First smoke usage occurs later on Inferno than Mirage; interpretation is non-causal.                                           |
-|      3 | semantic.b_pressure.player_presence.mid                | site_pattern      | players_b_pressure_55_65        | high_descriptive     | players b pressure 55 65 is higher in B-plant rounds than A-plant rounds; interpretation is non-causal.                        |
-|      4 | utility.molotov.early_usage                            | direct_feature    | molotovs_used_0_15              | high_descriptive     | molotovs used 0 15 is higher on Inferno than Mirage; interpretation is non-causal.                                             |
-|      5 | utility.molotov.mid_usage                              | direct_feature    | molotovs_used_0_45              | high_descriptive     | molotovs used 0 45 is higher on Inferno than Mirage; interpretation is non-causal.                                             |
-|      6 | utility.inventory.flash                                | site_pattern      | team_flashes_start              | moderate_descriptive | team flashes start is lower in B-plant rounds than A-plant rounds; interpretation is non-causal.                               |
-|      7 | plant_progression.score_diff_before_round.non_temporal | plant_progression | score_diff_before_round         | moderate_descriptive | score diff before round is higher in no-target-plant rounds than planted rounds; no-plant is descriptive, not a failure label. |
-|      8 | utility.inventory.molotov                              | site_pattern      | team_molotovs_start             | moderate_descriptive | team molotovs start is lower in B-plant rounds than A-plant rounds; interpretation is non-causal.                              |
-|      9 | site_choice.distribution                               | site_choice       | plant_site_distribution_b_share | moderate_descriptive | Observed planted T rounds are more balanced between A and B on Inferno than Mirage; this is plant-site choice only.            |
+|   rank | finding_concept_id                      | category       | representative_feature          | evidence_quality     | representative_text                                                                                                 |
+|-------:|:----------------------------------------|:---------------|:--------------------------------|:---------------------|:--------------------------------------------------------------------------------------------------------------------|
+|      1 | utility.smoke.early_usage               | direct_feature | smokes_used_0_25                | high_descriptive     | smokes used 0 25 is lower on Inferno than Mirage; interpretation is non-causal.                                     |
+|      2 | utility.smoke.first_timing              | direct_feature | first_smoke_time                | high_descriptive     | First smoke usage occurs later on Inferno than Mirage; interpretation is non-causal.                                |
+|      3 | semantic.b_pressure.player_presence.mid | site_pattern   | players_b_pressure_55_65        | high_descriptive     | players b pressure 55 65 is higher in B-plant rounds than A-plant rounds; interpretation is non-causal.             |
+|      4 | utility.molotov.early_usage             | direct_feature | molotovs_used_0_15              | high_descriptive     | molotovs used 0 15 is higher on Inferno than Mirage; interpretation is non-causal.                                  |
+|      5 | utility.molotov.mid_usage               | direct_feature | molotovs_used_0_45              | high_descriptive     | molotovs used 0 45 is higher on Inferno than Mirage; interpretation is non-causal.                                  |
+|      6 | utility.inventory.flash                 | site_pattern   | team_flashes_start              | moderate_descriptive | team flashes start is lower in B-plant rounds than A-plant rounds; interpretation is non-causal.                    |
+|      7 | site_choice.distribution                | site_choice    | plant_site_distribution_b_share | moderate_descriptive | Observed planted T rounds are more balanced between A and B on Inferno than Mirage; this is plant-site choice only. |
 
 ## Utility Findings
 | finding_concept_id                                  | representative_feature     | evidence_quality     | representative_text                                                                               |
@@ -211,28 +209,28 @@ Late windows are downgraded when either map has exposure below the configured th
 | mm_eda_0090  | utility.flash.mid_usage          | flashes_used_0_75          |                   0.666667 |                    0.846154 | insufficient_exposure         |
 
 ## Findings Sensitive to One Demo
-| finding_id   | finding_concept_id                |   demos_evaluated |   direction_flips | status   |
-|:-------------|:----------------------------------|------------------:|------------------:|:---------|
-| mm_eda_0005  | structure.pairwise_distance.early |                14 |                 1 | warning  |
-| mm_eda_0008  | structure.pairwise_distance.late  |                15 |                 1 | warning  |
-| mm_eda_0011  | structure.pairwise_distance.early |                17 |                 1 | warning  |
-| mm_eda_0016  | structure.pairwise_distance.early |                17 |                 1 | warning  |
-| mm_eda_0020  | structure.pairwise_distance.early |                14 |                 1 | warning  |
-| mm_eda_0021  | structure.pairwise_distance.early |                17 |                 1 | warning  |
-| mm_eda_0025  | structure.pairwise_distance.early |                14 |                 1 | warning  |
-| mm_eda_0041  | utility.flash.late_usage          |                17 |                 1 | warning  |
-| mm_eda_0046  | utility.flash.late_usage          |                17 |                 1 | warning  |
-| mm_eda_0054  | utility.flash.early_usage         |                17 |                 1 | warning  |
-| mm_eda_0056  | utility.flash.early_usage         |                17 |                 1 | warning  |
-| mm_eda_0058  | utility.flash.early_usage         |                15 |                 1 | warning  |
-| mm_eda_0059  | utility.flash.early_usage         |                17 |                 1 | warning  |
-| mm_eda_0061  | utility.flash.early_usage         |                17 |                 1 | warning  |
-| mm_eda_0063  | utility.flash.early_usage         |                15 |                 1 | warning  |
-| mm_eda_0064  | utility.flash.early_usage         |                17 |                 1 | warning  |
-| mm_eda_0069  | utility.flash.early_usage         |                17 |                 1 | warning  |
-| mm_eda_0076  | utility.flash.mid_usage           |                17 |                 1 | warning  |
-| mm_eda_0077  | utility.flash.mid_usage           |                17 |                 1 | warning  |
-| mm_eda_0078  | utility.flash.mid_usage           |                15 |                 1 | warning  |
+| finding_id   | finding_concept_id                         |   demos_evaluated |   direction_flips | status   |
+|:-------------|:-------------------------------------------|------------------:|------------------:|:---------|
+| mm_eda_0070  | utility.flash.early_usage                  |                19 |                 4 | warning  |
+| mm_eda_0085  | utility.flash.mid_usage                    |                19 |                 3 | warning  |
+| mm_eda_0163  | utility.he.late_usage                      |                20 |                 5 | warning  |
+| mm_eda_0168  | utility.he.late_usage                      |                20 |                 5 | warning  |
+| mm_eda_0191  | utility.he.mid_usage                       |                22 |                 3 | warning  |
+| mm_eda_0198  | utility.he.mid_usage                       |                20 |                 5 | warning  |
+| mm_eda_0203  | utility.he.mid_usage                       |                20 |                 5 | warning  |
+| mm_eda_0208  | utility.he.mid_usage                       |                20 |                 4 | warning  |
+| mm_eda_0213  | utility.he.late_usage                      |                20 |                 4 | warning  |
+| mm_eda_0218  | utility.he.late_usage                      |                20 |                 5 | warning  |
+| mm_eda_0272  | direct_feature.is_early_round.non_temporal |                22 |                 1 | warning  |
+| mm_eda_0353  | utility.molotov.early_usage                |                20 |                 1 | warning  |
+| mm_eda_0418  | plant_progression.players_alive.early      |                20 |                 3 | warning  |
+| mm_eda_0540  | utility.smoke.mid_usage                    |                19 |                 1 | warning  |
+| mm_eda_0545  | utility.smoke.late_usage                   |                19 |                 3 | warning  |
+| mm_eda_0676  | utility.total.early_usage                  |                22 |                 1 | warning  |
+| mm_eda_0720  | utility.total.late_usage                   |                19 |                 1 | warning  |
+| mm_eda_0742  | semantic.a_pressure.player_presence.early  |                22 |                 1 | warning  |
+| mm_eda_0747  | semantic.a_pressure.player_presence.early  |                22 |                 2 | warning  |
+| mm_eda_0787  | semantic.a_pressure.player_presence.early  |                22 |                 1 | warning  |
 
 ## Findings Sensitive to Opponent
 _No rows._
