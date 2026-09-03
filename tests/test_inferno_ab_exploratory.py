@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from src.modeling.build_map_ab_dataset import (
     build_experiment_fingerprint,
@@ -10,6 +11,8 @@ from src.modeling.build_map_ab_dataset import (
     run_build_map_ab_dataset,
 )
 from src.modeling.inferno_ab_exploratory_baseline import (
+    build_error_analysis,
+    build_error_summary,
     bootstrap_metric_uncertainty,
     evaluate_dummy_baselines,
     evaluate_feature_set,
@@ -38,6 +41,27 @@ def test_build_map_ab_dataset_filters_scope_and_uses_series_groups(tmp_path: Pat
     assert set(dataset["label"]) == {"A", "B"}
     assert set(dataset["model_group_id"]) == {"series_1", "series_2", "series_3"}
     assert frames["inferno_ab_label_audit"].iloc[0]["low_confidence_excluded"] == 1
+    assert "inferno_ab_feature_evidence_audit" in frames
+    assert "inferno_ab_modeling_preconditions" in frames
+    assert not frames["inferno_ab_feature_set_audit"]["exclusion_reason"].astype(str).str.contains("unknown_not_approved").any()
+
+
+def test_missing_mandatory_quality_artifact_blocks_experiment(tmp_path: Path) -> None:
+    config, model_config = write_stage_811_fixture(tmp_path)
+    (tmp_path / "data/gold/validation/map_feature_quality/map_feature_quality_profile.parquet").unlink()
+
+    with pytest.raises(FileNotFoundError, match="Mandatory modeling evidence artifact"):
+        run_build_map_ab_dataset(config_path=config, model_config_path=model_config, dry_run=True)
+
+
+def test_feature_missing_from_evidence_is_unknown_not_approved(tmp_path: Path) -> None:
+    config, model_config = write_stage_811_fixture(tmp_path, include_smoke_evidence=False)
+
+    frames, _, _ = run_build_map_ab_dataset(config_path=config, model_config_path=model_config, dry_run=True)
+    evidence = frames["inferno_ab_feature_evidence_audit"].set_index("feature_name")
+
+    assert evidence.loc["smokes_used_0_35", "quality_status"] == "unknown_not_approved"
+    assert bool(evidence.loc["smokes_used_0_35", "approved_for_modeling"]) is False
 
 
 def test_feature_leakage_rules_block_absolute_exclusions() -> None:
@@ -93,6 +117,63 @@ def test_dummy_null_bootstrap_and_metrics_are_deterministic(tmp_path: Path) -> N
     assert len(null_a) == 5
     assert set(uncertainty["metric"]) == {"macro_f1", "balanced_accuracy", "recall_A", "recall_B"}
     assert metric_values(pd.Series(["A", "B"]), pd.Series(["A", "A"]))["recall_B"] == 0.0
+    metrics = metric_values(pd.Series(["A", "A", "B", "B"]), pd.Series(["A", "B", "B", "A"]), y_proba_b=pd.Series([0.1, 0.8, 0.7, 0.4]))
+    assert {"f1_A", "f1_B", "MCC", "ROC_AUC", "Brier_score", "log_loss", "true_A_pred_A", "true_A_pred_B", "true_B_pred_A", "true_B_pred_B"} <= set(metrics)
+    fold_metrics = metric_values(pd.Series(["A", "A"]), pd.Series(["A", "B"]), y_proba_b=pd.Series([0.1, 0.8]))
+    assert fold_metrics["ROC_AUC"] is None
+    assert fold_metrics["metric_availability_notes"] == "undefined_single_class_fold"
+
+
+def test_error_analysis_is_round_level_and_summary_matches() -> None:
+    oof = pd.DataFrame(
+        [
+            {
+                "round_feature_id": "rf_1",
+                "round_id": "r1",
+                "parse_id": "p1",
+                "series_id": "s1",
+                "model_group_id": "s1",
+                "fold_id": 1,
+                "held_out_group": "s1",
+                "true_label": "A",
+                "predicted_label": "B",
+                "predicted_proba_A": 0.25,
+                "predicted_proba_B": 0.75,
+                "prediction_confidence": 0.75,
+                "is_correct": False,
+            },
+            {
+                "round_feature_id": "rf_2",
+                "round_id": "r2",
+                "parse_id": "p2",
+                "series_id": "s2",
+                "model_group_id": "s2",
+                "fold_id": 2,
+                "held_out_group": "s2",
+                "true_label": "B",
+                "predicted_label": "B",
+                "predicted_proba_A": 0.2,
+                "predicted_proba_B": 0.8,
+                "prediction_confidence": 0.8,
+                "is_correct": True,
+            },
+        ]
+    )
+    dataset = pd.DataFrame(
+        [
+            {"round_feature_id": "rf_1", "round_id": "r1", "parse_id": "p1", "series_id": "s1", "model_group_id": "s1", "score_diff_before_round": -1, "smokes_used_0_35": 2},
+            {"round_feature_id": "rf_2", "round_id": "r2", "parse_id": "p2", "series_id": "s2", "model_group_id": "s2", "score_diff_before_round": 1, "smokes_used_0_35": 1},
+        ]
+    )
+
+    errors = build_error_analysis(oof, dataset, ["score_diff_before_round", "smokes_used_0_35"])
+    summary = build_error_summary(errors)
+
+    assert len(errors) == 1
+    assert errors.iloc[0]["round_feature_id"] == "rf_1"
+    assert errors.iloc[0]["probability_true_class"] == 0.25
+    assert errors.iloc[0]["feature__smokes_used_0_35"] == 2
+    assert summary.iloc[0]["rows"] == 1
 
 
 def test_experiment_fingerprint_is_stable(tmp_path: Path) -> None:
@@ -110,7 +191,7 @@ def test_experiment_fingerprint_is_stable(tmp_path: Path) -> None:
     )
 
 
-def write_stage_811_fixture(tmp_path: Path) -> tuple[Path, Path]:
+def write_stage_811_fixture(tmp_path: Path, *, include_smoke_evidence: bool = True) -> tuple[Path, Path]:
     config = tmp_path / "configs" / "project.yaml"
     model_config = tmp_path / "configs" / "modeling" / "inferno_ab_exploratory.yaml"
     feature_contract = tmp_path / "configs" / "features" / "feature_contract.yaml"
@@ -222,7 +303,97 @@ features:
     output = tmp_path / "data" / "gold" / "round_features"
     output.mkdir(parents=True)
     pd.DataFrame(rows).to_parquet(output / "round_features_t_side_planted.parquet", index=False)
+    write_modeling_evidence_fixture(tmp_path, include_smoke_evidence=include_smoke_evidence)
     return config, model_config
+
+
+def write_modeling_evidence_fixture(tmp_path: Path, *, include_smoke_evidence: bool = True) -> None:
+    gold = tmp_path / "data" / "gold"
+    quality_dir = gold / "validation" / "map_feature_quality"
+    repair_dir = gold / "validation" / "feature_materialization_repair"
+    multi_map_dir = gold / "validation" / "multi_map_gold"
+    hardening_dir = gold / "analysis" / "tactical_finding_hardening"
+    for path in [quality_dir, repair_dir, multi_map_dir, hardening_dir]:
+        path.mkdir(parents=True, exist_ok=True)
+    features = ["score_diff_before_round"]
+    if include_smoke_evidence:
+        features.append("smokes_used_0_35")
+    profile_rows = [
+        {
+            "map_id": "inferno",
+            "target_team": "Vitality",
+            "feature_name": feature,
+            "missing_share": 0.0,
+            "quality_status": "ok",
+            "constant": False,
+            "near_constant": False,
+            "all_null": False,
+            "all_zero": False,
+        }
+        for feature in features
+    ]
+    missingness_rows = [
+        {"map_id": "inferno", "target_team": "Vitality", "feature_name": feature, "missing_share": 0.0, "blocking": False, "status": "ok"}
+        for feature in features
+    ]
+    degeneracy_rows = [
+        {
+            "map_id": "inferno",
+            "target_team": "Vitality",
+            "feature_name": feature,
+            "unique_values": 3,
+            "constant": False,
+            "near_constant": False,
+            "all_null": False,
+            "all_zero": False,
+            "blocking": False,
+            "status": "ok",
+        }
+        for feature in features
+    ]
+    audit = pd.DataFrame(
+        [
+            {
+                "map_id": "inferno",
+                "target_team": "Vitality",
+                "ready_for_inferno_modeling_experiment": True,
+                "status": "passed",
+            }
+        ]
+    )
+    materialization = pd.DataFrame(
+        [
+            {"map_id": "inferno", "feature_name": feature, "materialized": True, "status": "ok"}
+            for feature in features
+        ]
+    )
+    capabilities = pd.DataFrame(
+        [
+            {
+                "map_id": "inferno",
+                "target_team": "Vitality",
+                "capability_id": "smoke_usage",
+                "capability_status": "supported_materialized",
+                "status": "ok",
+            },
+            {
+                "map_id": "inferno",
+                "target_team": "Vitality",
+                "capability_id": "score_diff_before_round",
+                "capability_status": "supported_materialized",
+                "status": "ok",
+            },
+        ]
+    )
+    final_audit = pd.DataFrame([{"map_id": "inferno", "target_team": "Vitality", "ready_for_stage_8_10": True, "status": "passed"}])
+    pd.DataFrame(profile_rows).to_parquet(quality_dir / "map_feature_quality_profile.parquet", index=False)
+    pd.DataFrame(missingness_rows).to_parquet(quality_dir / "map_feature_missingness.parquet", index=False)
+    pd.DataFrame(degeneracy_rows).to_parquet(quality_dir / "map_feature_degeneracy.parquet", index=False)
+    audit.to_parquet(quality_dir / "map_feature_quality_audit.parquet", index=False)
+    capabilities.to_parquet(repair_dir / "feature_materialization_capabilities.parquet", index=False)
+    final_audit.to_parquet(repair_dir / "feature_materialization_repair_final_audit.parquet", index=False)
+    materialization.to_parquet(multi_map_dir / "inferno_feature_materialization.parquet", index=False)
+    pd.DataFrame([{"representative_feature": "smokes_used_0_35"}]).to_parquet(hardening_dir / "modeling_context_findings.parquet", index=False)
 
 
 def model_row(index: int, label: str, series: str) -> dict[str, object]:

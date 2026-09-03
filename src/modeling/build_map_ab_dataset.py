@@ -45,6 +45,17 @@ LEAKAGE_TOKENS = (
 )
 ENDPOINT_PREFIXES = ("smokes_to_", "molotovs_to_", "flashes_to_", "he_to_")
 RAW_COORDINATE_RE = re.compile(r"(^|_)(x|y|z)($|_)")
+QUALITY_ARTIFACTS = {
+    "quality_profile": ("validation/map_feature_quality/map_feature_quality_profile", True),
+    "missingness": ("validation/map_feature_quality/map_feature_missingness", True),
+    "degeneracy": ("validation/map_feature_quality/map_feature_degeneracy", True),
+    "quality_audit": ("validation/map_feature_quality/map_feature_quality_audit", True),
+    "materialization_capabilities": ("validation/feature_materialization_repair/feature_materialization_capabilities", True),
+    "materialization_final_audit": ("validation/feature_materialization_repair/feature_materialization_repair_final_audit", True),
+    "feature_materialization": ("validation/multi_map_gold/inferno_feature_materialization", False),
+}
+QUALITY_APPROVED = {"passed", "warning"}
+MATERIALIZATION_APPROVED = {"supported", "not_applicable"}
 
 
 def run_build_map_ab_dataset(
@@ -83,21 +94,32 @@ def run_build_map_ab_dataset(
     model_scope["label"] = model_scope[label_column].astype(str)
     model_scope["model_group_id"] = model_scope[grouping_column].astype(str)
 
-    feature_contract = load_feature_contract(project_root / "configs" / "features" / "feature_contract.yaml")
-    quality = read_optional(gold_dir / "validation" / "map_feature_quality" / "map_feature_quality_feature_audit.parquet")
-    materialization = read_optional(
-        gold_dir / "validation" / "feature_materialization_repair" / "feature_materialization_repair_feature_audit.parquet"
-    )
+    feature_contract_path = project_root / "configs" / "features" / "feature_contract.yaml"
+    feature_contract = load_feature_contract(feature_contract_path)
+    quality_evidence = load_modeling_quality_evidence(gold_dir, target_map=target_map, target_team=target_team)
     hardened = read_optional(gold_dir / "analysis" / "tactical_finding_hardening" / "modeling_context_findings.parquet")
 
     leakage_audit = build_feature_leakage_audit(
         model_scope,
         model_config,
         feature_contract,
-        quality,
-        materialization,
+        quality_evidence,
         horizon=horizon,
     )
+    feature_evidence = build_feature_evidence_audit(leakage_audit)
+    preconditions = build_modeling_preconditions(
+        source_table_present=not source.empty,
+        feature_contract_present=feature_contract_path.exists(),
+        quality_evidence=quality_evidence,
+        feature_evidence=feature_evidence,
+        hardened=hardened,
+        model_scope=model_scope,
+        grouping_column=grouping_column,
+        model_config=model_config,
+    )
+    if preconditions["status"].eq("failed").any():
+        failed = "|".join(preconditions.loc[preconditions["status"].eq("failed"), "check_name"].astype(str))
+        raise ValueError(f"Inferno A/B modeling preconditions failed: {failed}")
     horizon_audit = leakage_audit[
         ["feature_name", "window_type", "window_start", "window_end", "available_at_horizon", "exclusion_reason"]
     ].copy()
@@ -125,6 +147,8 @@ def run_build_map_ab_dataset(
         "inferno_ab_label_audit": label_audit,
         "inferno_ab_group_audit": group_audit,
         "inferno_ab_feature_leakage_audit": leakage_audit,
+        "inferno_ab_feature_evidence_audit": feature_evidence,
+        "inferno_ab_modeling_preconditions": preconditions,
         "inferno_ab_horizon_audit": horizon_audit,
         "inferno_ab_feature_set_audit": feature_set_audit,
         "inferno_ab_experiment_fingerprint": pd.DataFrame(
@@ -167,6 +191,41 @@ def read_gold_table(path_without_suffix: Path) -> pd.DataFrame:
 
 def read_optional(path: Path) -> pd.DataFrame:
     return read_optional_table(path)
+
+
+def load_modeling_quality_evidence(gold_dir: Path, *, target_map: str, target_team: str) -> dict[str, Any]:
+    frames: dict[str, pd.DataFrame] = {}
+    sources: dict[str, str] = {}
+    missing: list[str] = []
+    for key, (relative_base, mandatory) in QUALITY_ARTIFACTS.items():
+        base = gold_dir / relative_base
+        try:
+            frame = read_table_pair(base)
+        except FileNotFoundError:
+            if mandatory:
+                missing.append(relative_base)
+            frame = pd.DataFrame()
+        frames[key] = scope_quality_frame(frame, target_map=target_map, target_team=target_team)
+        sources[key] = str(base)
+        if mandatory and frames[key].empty:
+            missing.append(relative_base)
+    if missing:
+        raise FileNotFoundError("Mandatory modeling evidence artifact missing or empty: " + "|".join(dict.fromkeys(missing)))
+    return {"frames": frames, "sources": sources}
+
+
+def scope_quality_frame(frame: pd.DataFrame, *, target_map: str, target_team: str) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    result = frame.copy()
+    target_map_values = {target_map.casefold(), target_map.replace("de_", "").casefold()}
+    if "map_id" in result.columns:
+        result = result[result["map_id"].astype(str).str.casefold().isin(target_map_values)]
+    elif "map_name" in result.columns:
+        result = result[result["map_name"].astype(str).str.casefold().isin(target_map_values)]
+    if "target_team" in result.columns:
+        result = result[result["target_team"].astype(str).str.casefold().eq(target_team.casefold())]
+    return result.copy()
 
 
 def filter_model_scope(
@@ -219,8 +278,7 @@ def build_feature_leakage_audit(
     dataset: pd.DataFrame,
     model_config: dict[str, Any],
     feature_contract: dict[str, dict[str, Any]],
-    quality: pd.DataFrame,
-    materialization: pd.DataFrame,
+    quality_evidence: dict[str, Any],
     *,
     horizon: int,
 ) -> pd.DataFrame:
@@ -229,11 +287,27 @@ def build_feature_leakage_audit(
     for feature_name, family, selection_source in candidates:
         contract = feature_contract.get(feature_name, {})
         present = feature_name in dataset.columns
+        model_unique_values = int(dataset[feature_name].nunique(dropna=True)) if present else 0
         window_type, window_start, window_end = feature_window(feature_name, contract)
-        materialization_status = materialization_status_for(feature_name, materialization, present)
-        quality_status = quality_status_for(feature_name, quality)
+        quality = quality_status_for(feature_name, quality_evidence)
+        materialization = materialization_status_for(feature_name, quality_evidence)
         flags = leakage_flags(feature_name, contract, window_end=window_end, horizon=horizon)
-        eligible = bool(present and materialization_status != "missing" and quality_status != "failed" and not flags["blocked"])
+        nonconstant = model_unique_values > 1 and quality["degeneracy_status"] not in {"constant", "all_null", "all_zero", "near_constant_blocking"}
+        eligible = bool(
+            present
+            and flags["available_at_horizon"]
+            and not flags["blocked"]
+            and quality["quality_status"] in QUALITY_APPROVED
+            and materialization["materialization_status"] in MATERIALIZATION_APPROVED
+            and nonconstant
+        )
+        exclusion_reason = approval_reason(
+            present=present,
+            flags=flags,
+            quality_status=quality["quality_status"],
+            materialization_status=materialization["materialization_status"],
+            nonconstant=nonconstant,
+        )
         rows.append(
             {
                 "feature_name": feature_name,
@@ -248,11 +322,17 @@ def build_feature_leakage_audit(
                 "label_dependency": flags["label_dependency"],
                 "endpoint_dependency": flags["endpoint_dependency"],
                 "raw_coordinate_dependency": flags["raw_coordinate_dependency"],
-                "materialization_status": materialization_status,
-                "quality_status": quality_status,
+                "materialization_artifact": materialization["materialization_artifact"],
+                "materialization_status": materialization["materialization_status"],
+                "quality_artifact": quality["quality_artifact"],
+                "quality_status": quality["quality_status"],
+                "missing_share": quality["missing_share"],
+                "model_unique_values": model_unique_values,
+                "degeneracy_status": quality["degeneracy_status"],
+                "evidence_complete": bool(quality["evidence_complete"] and materialization["evidence_complete"]),
                 "selection_source": selection_source,
                 "eligible": eligible,
-                "exclusion_reason": None if eligible else flags["reason"] or "missing_or_low_quality",
+                "exclusion_reason": None if eligible else exclusion_reason,
             }
         )
     return pd.DataFrame(rows)
@@ -341,25 +421,226 @@ def leakage_flags(feature_name: str, contract: dict[str, Any], *, window_end: fl
     }
 
 
-def materialization_status_for(feature_name: str, materialization: pd.DataFrame, present: bool) -> str:
+def materialization_status_for(feature_name: str, quality_evidence: dict[str, Any]) -> dict[str, object]:
+    frames = quality_evidence["frames"]
+    sources = quality_evidence["sources"]
+    feature_mat = frames["feature_materialization"]
+    if not feature_mat.empty and "feature_name" in feature_mat.columns:
+        row = feature_mat[feature_mat["feature_name"].astype(str).eq(feature_name)]
+        if not row.empty:
+            materialized = bool(row.iloc[0].get("materialized", False))
+            status = str(row.iloc[0].get("status") or "")
+            normalized = "supported" if materialized and status in {"ok", "passed", "supported"} else "unsupported_source"
+            return {
+                "materialization_status": normalized,
+                "materialization_artifact": sources["feature_materialization"],
+                "evidence_complete": True,
+            }
+    capability = capability_for_feature(feature_name)
+    capabilities = frames["materialization_capabilities"]
+    if capability and not capabilities.empty:
+        row = capabilities[capabilities["capability_id"].astype(str).eq(capability)]
+        if not row.empty:
+            raw = str(row.iloc[0].get("capability_status") or row.iloc[0].get("status") or "")
+            status = normalize_materialization_status(raw)
+            return {
+                "materialization_status": status,
+                "materialization_artifact": sources["materialization_capabilities"],
+                "evidence_complete": True,
+            }
+    return {
+        "materialization_status": "unknown_not_approved",
+        "materialization_artifact": sources["materialization_capabilities"],
+        "evidence_complete": False,
+    }
+
+
+def capability_for_feature(feature_name: str) -> str | None:
+    if feature_name == "score_diff_before_round":
+        return "score_diff_before_round"
+    prefixes = {
+        "smokes_used_": "smoke_usage",
+        "flashes_used_": "flash_usage",
+        "molotovs_used_": "molotov_usage",
+        "he_used_": "he_usage",
+        "smokes_to_": "utility_endpoint_regions",
+        "flashes_to_": "utility_endpoint_regions",
+        "molotovs_to_": "utility_endpoint_regions",
+        "he_to_": "utility_endpoint_regions",
+    }
+    return next((capability for prefix, capability in prefixes.items() if feature_name.startswith(prefix)), None)
+
+
+def normalize_materialization_status(value: object) -> str:
+    text = str(value or "").casefold()
+    if text in {"ok", "passed", "supported", "repaired", "supported_materialized"}:
+        return "supported"
+    if text in {"unsupported", "unsupported_source", "unsupported_unresolved", "failed", "blocked"}:
+        return "unsupported_source"
+    if text in {"not_applicable", "not_applicable_for_modeling"}:
+        return "not_applicable"
+    if text == "deprecated":
+        return "deprecated"
+    return "unknown_not_approved"
+
+
+def quality_status_for(feature_name: str, quality_evidence: dict[str, Any]) -> dict[str, object]:
+    frames = quality_evidence["frames"]
+    sources = quality_evidence["sources"]
+    profile = row_for_feature(frames["quality_profile"], feature_name)
+    missingness = row_for_feature(frames["missingness"], feature_name)
+    degeneracy = row_for_feature(frames["degeneracy"], feature_name)
+    complete = not profile.empty and not missingness.empty and not degeneracy.empty
+    if not complete:
+        return {
+            "quality_status": "unknown_not_approved",
+            "quality_artifact": sources["quality_profile"],
+            "missing_share": None,
+            "degeneracy_status": "unknown_not_approved",
+            "evidence_complete": False,
+        }
+    blocking = any(bool(row.get("blocking", False)) for row in [missingness, degeneracy])
+    profile_status = normalize_quality_status(profile.get("quality_status") or profile.get("status"))
+    missing_status = normalize_quality_status(missingness.get("status"))
+    degeneracy_status = degeneracy_label(degeneracy)
+    if blocking or profile_status == "failed" or missing_status == "failed" or degeneracy_status in {"constant", "all_null", "all_zero", "near_constant_blocking"}:
+        quality_status = "failed"
+    elif "warning" in {profile_status, missing_status}:
+        quality_status = "warning"
+    else:
+        quality_status = "passed"
+    return {
+        "quality_status": quality_status,
+        "quality_artifact": sources["quality_profile"],
+        "missing_share": to_float(profile.get("missing_share")),
+        "degeneracy_status": degeneracy_status,
+        "evidence_complete": True,
+    }
+
+
+def row_for_feature(frame: pd.DataFrame, feature_name: str) -> pd.Series:
+    if frame.empty or "feature_name" not in frame.columns:
+        return pd.Series(dtype=object)
+    rows = frame[frame["feature_name"].astype(str).eq(feature_name)]
+    return rows.iloc[0] if not rows.empty else pd.Series(dtype=object)
+
+
+def normalize_quality_status(value: object) -> str:
+    text = str(value or "").casefold()
+    if text in {"ok", "passed"}:
+        return "passed"
+    if text == "warning":
+        return "warning"
+    if text in {"failed", "blocked", "error"}:
+        return "failed"
+    return "unknown_not_approved"
+
+
+def degeneracy_label(row: pd.Series) -> str:
+    if bool(row.get("all_null", False)):
+        return "all_null"
+    if bool(row.get("constant", False)):
+        return "constant"
+    if bool(row.get("all_zero", False)):
+        return "all_zero"
+    if bool(row.get("near_constant", False)) and bool(row.get("blocking", False)):
+        return "near_constant_blocking"
+    status = normalize_quality_status(row.get("status"))
+    return status
+
+
+def approval_reason(
+    *,
+    present: bool,
+    flags: dict[str, Any],
+    quality_status: str,
+    materialization_status: str,
+    nonconstant: bool,
+) -> str:
     if not present:
-        return "missing"
-    if materialization.empty or "feature_name" not in materialization.columns:
-        return "supported"
-    row = materialization[materialization["feature_name"].astype(str).eq(feature_name)]
-    if row.empty:
-        return "supported"
-    status = str(row.iloc[0].get("status") or row.iloc[0].get("repair_status") or "supported")
-    return "supported" if status in {"ok", "passed", "supported", "repaired"} else status
+        return "not_present_in_modeling_source"
+    if flags["reason"]:
+        return str(flags["reason"])
+    if quality_status not in QUALITY_APPROVED:
+        return quality_status
+    if materialization_status not in MATERIALIZATION_APPROVED:
+        return materialization_status
+    if not nonconstant:
+        return "constant_or_degenerate"
+    return "approved"
 
 
-def quality_status_for(feature_name: str, quality: pd.DataFrame) -> str:
-    if quality.empty or "feature_name" not in quality.columns:
-        return "unknown"
-    row = quality[quality["feature_name"].astype(str).eq(feature_name)]
-    if row.empty:
-        return "unknown"
-    return str(row.iloc[0].get("status") or row.iloc[0].get("quality_status") or "unknown")
+def build_feature_evidence_audit(leakage_audit: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for _, row in leakage_audit.iterrows():
+        approved = bool(row.get("eligible", False))
+        rows.append(
+            {
+                "feature_name": row.get("feature_name"),
+                "quality_artifact": row.get("quality_artifact"),
+                "quality_status": row.get("quality_status"),
+                "missing_share": row.get("missing_share"),
+                "degeneracy_status": row.get("degeneracy_status"),
+                "materialization_artifact": row.get("materialization_artifact"),
+                "materialization_status": row.get("materialization_status"),
+                "contract_status": "present" if str(row.get("window_type") or "") else "missing",
+                "horizon_safe": bool(row.get("available_at_horizon", False)),
+                "leakage_safe": not any(bool(row.get(flag, False)) for flag in ["plant_dependency", "outcome_dependency", "label_dependency", "endpoint_dependency", "raw_coordinate_dependency"]),
+                "approved_for_modeling": approved,
+                "approval_reason": "approved" if approved else row.get("exclusion_reason"),
+                "evidence_complete": bool(row.get("evidence_complete", False)),
+                "status": "ok" if approved else "not_approved",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_modeling_preconditions(
+    *,
+    source_table_present: bool,
+    feature_contract_present: bool,
+    quality_evidence: dict[str, Any],
+    feature_evidence: pd.DataFrame,
+    hardened: pd.DataFrame,
+    model_scope: pd.DataFrame,
+    grouping_column: str,
+    model_config: dict[str, Any],
+) -> pd.DataFrame:
+    frames = quality_evidence["frames"]
+    quality_gate = frames["quality_audit"]
+    repair_gate = frames["materialization_final_audit"]
+    minimum_groups = int(model_config.get("validation", {}).get("minimum_valid_groups", 3))
+    groups = int(model_scope[grouping_column].astype(str).nunique()) if grouping_column in model_scope.columns and not model_scope.empty else 0
+    evidence_requiring_rows = feature_evidence[~feature_evidence["approval_reason"].astype(str).eq("not_present_in_modeling_source")]
+    checks = {
+        "feature_contract_present": feature_contract_present,
+        "stage_8_9_quality_artifacts_present": all(not frames[name].empty for name in ["quality_profile", "missingness", "degeneracy", "quality_audit"]),
+        "stage_8_9_quality_gate_passed": not quality_gate.empty and quality_gate["status"].astype(str).str.casefold().eq("passed").any(),
+        "stage_8_9_1_materialization_artifacts_present": all(not frames[name].empty for name in ["materialization_capabilities", "materialization_final_audit"]),
+        "stage_8_9_1_repair_gate_passed": not repair_gate.empty and repair_gate["status"].astype(str).str.casefold().eq("passed").any(),
+        "stage_8_10_1_hardening_present": not hardened.empty,
+        "modeling_source_table_present": source_table_present,
+        "grouping_valid": grouping_column in model_scope.columns,
+        "minimum_groups_met": groups >= minimum_groups,
+        "quality_evidence_complete": bool(evidence_requiring_rows["quality_status"].ne("unknown_not_approved").all()) if not evidence_requiring_rows.empty else False,
+        "materialization_evidence_complete": bool(evidence_requiring_rows["materialization_status"].ne("unknown_not_approved").all()) if not evidence_requiring_rows.empty else False,
+    }
+    mandatory = {
+        "feature_contract_present",
+        "stage_8_9_quality_artifacts_present",
+        "stage_8_9_quality_gate_passed",
+        "stage_8_9_1_materialization_artifacts_present",
+        "stage_8_9_1_repair_gate_passed",
+        "stage_8_10_1_hardening_present",
+        "modeling_source_table_present",
+        "grouping_valid",
+        "minimum_groups_met",
+    }
+    rows = []
+    for check, passed in checks.items():
+        status = "ok" if passed else "failed" if check in mandatory else "warning"
+        rows.append({"check_name": check, "passed": bool(passed), "status": status})
+    return pd.DataFrame(rows)
 
 
 def build_feature_set_audit(
@@ -379,8 +660,8 @@ def build_feature_set_audit(
         present = feature in dataset.columns
         missing_share = float(dataset[feature].isna().mean()) if present else None
         unique_values = int(dataset[feature].nunique(dropna=True)) if present else 0
-        quality_passed = str(audit.get("quality_status")) not in {"failed", "blocked"}
-        materialization_supported = str(audit.get("materialization_status")) != "missing"
+        quality_passed = str(audit.get("quality_status")) in QUALITY_APPROVED
+        materialization_supported = str(audit.get("materialization_status")) in MATERIALIZATION_APPROVED
         included = bool(audit.get("eligible", False) and unique_values > 1)
         reason = audit.get("exclusion_reason")
         reason = None if reason is None or pd.isna(reason) else reason

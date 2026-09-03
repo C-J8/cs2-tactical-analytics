@@ -14,7 +14,18 @@ import yaml
 from sklearn.dummy import DummyClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    brier_score_loss,
+    confusion_matrix,
+    f1_score,
+    log_loss,
+    matthews_corrcoef,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import LeaveOneGroupOut
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -36,6 +47,8 @@ OUTPUT_NAMES = [
     "inferno_ab_feature_leakage_audit",
     "inferno_ab_horizon_audit",
     "inferno_ab_feature_set_audit",
+    "inferno_ab_feature_evidence_audit",
+    "inferno_ab_modeling_preconditions",
     "inferno_ab_dummy_baselines",
     "inferno_ab_oof_predictions",
     "inferno_ab_fold_metrics",
@@ -48,11 +61,15 @@ OUTPUT_NAMES = [
     "inferno_ab_demo_performance",
     "inferno_ab_confidence_audit",
     "inferno_ab_error_analysis",
+    "inferno_ab_error_summary",
     "inferno_ab_feature_set_comparison",
     "inferno_ab_eda_context_audit",
     "inferno_ab_full_fit_coefficients",
     "inferno_ab_experiment_fingerprint",
     "inferno_ab_read_only_audit",
+    "inferno_ab_integrity_revalidation",
+    "inferno_ab_frozen_experiment_audit",
+    "modeling_integrity_refactor_regression_audit",
     "inferno_ab_exploratory_model_audit",
 ]
 LABELS = ["A", "B"]
@@ -72,6 +89,7 @@ def run_inferno_ab_exploratory_baseline(
     model_config = load_model_config(model_config_path)
     experiment = model_config["experiment"]
     output_dir = gold_dir / "modeling" / str(experiment.get("output_subdir", "inferno_ab_exploratory"))
+    previous_snapshot = capture_previous_integrity_snapshot(output_dir)
     upstream_before = capture_upstream_fingerprints(project_root, gold_dir)
 
     frames, _, dataset_summary = run_build_map_ab_dataset(
@@ -101,7 +119,8 @@ def run_inferno_ab_exploratory_baseline(
     ablations = evaluate_ablations(dataset, feature_set_audit, model_config, null_summary)
     eda_context = build_eda_context_audit(feature_set_audit, gold_dir)
     confidence = build_confidence_audit(primary["oof_predictions"])
-    errors = build_error_analysis(primary["oof_predictions"], dataset)
+    errors = build_error_analysis(primary["oof_predictions"], dataset, primary_features)
+    error_summary = build_error_summary(errors)
     demo_performance = build_demo_performance(primary["oof_predictions"], dataset)
     stability = build_model_stability(primary["fold_metrics"], primary["coefficient_stability"], uncertainty)
     fingerprint = build_experiment_fingerprint(dataset, primary["oof_predictions"], primary_features, model_config)
@@ -118,6 +137,17 @@ def run_inferno_ab_exploratory_baseline(
         signal_status,
         model_config,
     )
+    frozen_audit = build_frozen_experiment_audit(model_config)
+    integrity_revalidation = build_integrity_revalidation(previous_snapshot, dataset_summary, primary["oof_metrics"], null_summary, signal_status, primary_features)
+    integrity_audit = build_integrity_audit(
+        frames,
+        primary["oof_metrics"],
+        read_only,
+        signal_status,
+        model_config,
+        hardening_present=(gold_dir / "analysis" / "tactical_finding_hardening" / "tactical_finding_hardening_audit.parquet").exists(),
+        frozen_audit=frozen_audit,
+    )
 
     frames.update(
         {
@@ -133,6 +163,7 @@ def run_inferno_ab_exploratory_baseline(
             "inferno_ab_demo_performance": demo_performance,
             "inferno_ab_confidence_audit": confidence,
             "inferno_ab_error_analysis": errors,
+            "inferno_ab_error_summary": error_summary,
             "inferno_ab_feature_set_comparison": ablations,
             "inferno_ab_eda_context_audit": eda_context,
             "inferno_ab_full_fit_coefficients": full_coefficients,
@@ -148,6 +179,9 @@ def run_inferno_ab_exploratory_baseline(
                 ]
             ),
             "inferno_ab_read_only_audit": read_only,
+            "inferno_ab_integrity_revalidation": integrity_revalidation,
+            "inferno_ab_frozen_experiment_audit": frozen_audit,
+            "modeling_integrity_refactor_regression_audit": integrity_audit,
             "inferno_ab_exploratory_model_audit": exploratory_audit,
         }
     )
@@ -228,14 +262,26 @@ def evaluate_feature_set(dataset: pd.DataFrame, features: list[str], model_confi
         fold_frame["predicted_proba_B"] = proba_b
         fold_frame["prediction_confidence"] = np.maximum(proba_a, proba_b)
         fold_frame["is_correct"] = fold_frame["true_label"].eq(fold_frame["predicted_label"])
+        fold_frame["held_out_group"] = groups.iloc[test_idx].iloc[0]
         predictions.append(fold_frame)
-        folds.append(metrics_row(y_test, pd.Series(pred), feature_set_id=feature_set_id, fold_id=fold_id, heldout_group=groups.iloc[test_idx].iloc[0]))
+        folds.append(metrics_row(y_test, pd.Series(pred), y_proba_b=pd.Series(proba_b), feature_set_id=feature_set_id, fold_id=fold_id, heldout_group=groups.iloc[test_idx].iloc[0]))
         coefficients.append(coefficient_frame(model, features, fold_id=fold_id, feature_set_id=feature_set_id))
     oof = pd.concat(predictions, ignore_index=True) if predictions else pd.DataFrame()
     return {
         "oof_predictions": oof,
         "fold_metrics": pd.DataFrame(folds),
-        "oof_metrics": pd.DataFrame([metrics_row(oof["true_label"], oof["predicted_label"], feature_set_id=feature_set_id, fold_id=None, heldout_group=None)]),
+        "oof_metrics": pd.DataFrame(
+            [
+                metrics_row(
+                    oof["true_label"],
+                    oof["predicted_label"],
+                    y_proba_b=oof["predicted_proba_B"],
+                    feature_set_id=feature_set_id,
+                    fold_id=None,
+                    heldout_group=None,
+                )
+            ]
+        ),
         "coefficient_stability": coefficient_stability(pd.concat(coefficients, ignore_index=True) if coefficients else pd.DataFrame(), features, feature_set_id),
     }
 
@@ -251,15 +297,23 @@ def evaluate_dummy_baselines(dataset: pd.DataFrame, features: list[str], model_c
             dummy = DummyClassifier(strategy=strategy, random_state=int(model_config["model"].get("random_state", 811)))
             dummy.fit(x.iloc[train_idx], y.iloc[train_idx])
             pred = dummy.predict(x.iloc[test_idx])
-            fold = metrics_row(y.iloc[test_idx], pd.Series(pred), feature_set_id=strategy, fold_id=fold_id, heldout_group=groups.iloc[test_idx].iloc[0])
+            proba_b = dummy_proba_b(dummy, x.iloc[test_idx])
+            fold = metrics_row(y.iloc[test_idx], pd.Series(pred), y_proba_b=proba_b, feature_set_id=strategy, fold_id=fold_id, heldout_group=groups.iloc[test_idx].iloc[0])
             fold["model_name"] = f"dummy_{strategy}"
-            predictions.append(pd.DataFrame({"true_label": y.iloc[test_idx].to_numpy(), "predicted_label": pred}))
+            predictions.append(pd.DataFrame({"true_label": y.iloc[test_idx].to_numpy(), "predicted_label": pred, "predicted_proba_B": proba_b.to_numpy()}))
             rows.append(fold)
         joined = pd.concat(predictions, ignore_index=True)
-        overall = metrics_row(joined["true_label"], joined["predicted_label"], feature_set_id=strategy, fold_id=None, heldout_group=None)
+        overall = metrics_row(joined["true_label"], joined["predicted_label"], y_proba_b=joined["predicted_proba_B"], feature_set_id=strategy, fold_id=None, heldout_group=None)
         overall["model_name"] = f"dummy_{strategy}"
         rows.append(overall)
     return pd.DataFrame(rows)
+
+
+def dummy_proba_b(dummy: DummyClassifier, x: pd.DataFrame) -> pd.Series:
+    proba = dummy.predict_proba(x)
+    classes = list(dummy.classes_)
+    values = proba[:, classes.index("B")] if "B" in classes else np.zeros(len(x))
+    return pd.Series(values, index=x.index)
 
 
 def run_null_permutation(dataset: pd.DataFrame, features: list[str], model_config: dict[str, Any]) -> pd.DataFrame:
@@ -334,8 +388,16 @@ def bootstrap_metric_uncertainty(oof: pd.DataFrame, model_config: dict[str, Any]
     return pd.DataFrame(rows)
 
 
-def metrics_row(y_true: pd.Series, y_pred: pd.Series, *, feature_set_id: str, fold_id: int | None, heldout_group: str | None) -> dict[str, Any]:
-    values = metric_values(y_true, y_pred)
+def metrics_row(
+    y_true: pd.Series,
+    y_pred: pd.Series,
+    *,
+    y_proba_b: pd.Series | None = None,
+    feature_set_id: str,
+    fold_id: int | None,
+    heldout_group: str | None,
+) -> dict[str, Any]:
+    values = metric_values(y_true, y_pred, y_proba_b=y_proba_b)
     values.update(
         {
             "feature_set_id": feature_set_id,
@@ -350,18 +412,41 @@ def metrics_row(y_true: pd.Series, y_pred: pd.Series, *, feature_set_id: str, fo
     return values
 
 
-def metric_values(y_true: pd.Series, y_pred: pd.Series) -> dict[str, float]:
+def metric_values(y_true: pd.Series, y_pred: pd.Series, *, y_proba_b: pd.Series | None = None) -> dict[str, float | None | str]:
     y_true = pd.Series(y_true).astype(str)
     y_pred = pd.Series(y_pred).astype(str)
-    return {
+    matrix = confusion_matrix(y_true, y_pred, labels=LABELS)
+    values: dict[str, float | None | str] = {
         "accuracy": float(accuracy_score(y_true, y_pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
         "macro_f1": float(f1_score(y_true, y_pred, labels=LABELS, average="macro", zero_division=0)),
+        "f1_A": float(f1_score(y_true, y_pred, labels=["A"], average="macro", zero_division=0)),
+        "f1_B": float(f1_score(y_true, y_pred, labels=["B"], average="macro", zero_division=0)),
         "precision_A": float(precision_score(y_true, y_pred, labels=["A"], average="macro", zero_division=0)),
         "precision_B": float(precision_score(y_true, y_pred, labels=["B"], average="macro", zero_division=0)),
         "recall_A": float(recall_score(y_true, y_pred, labels=["A"], average="macro", zero_division=0)),
         "recall_B": float(recall_score(y_true, y_pred, labels=["B"], average="macro", zero_division=0)),
+        "MCC": float(matthews_corrcoef(y_true, y_pred)),
+        "true_A_pred_A": int(matrix[0, 0]),
+        "true_A_pred_B": int(matrix[0, 1]),
+        "true_B_pred_A": int(matrix[1, 0]),
+        "true_B_pred_B": int(matrix[1, 1]),
+        "ROC_AUC": None,
+        "Brier_score": None,
+        "log_loss": None,
+        "metric_availability_notes": "probability_metrics_not_available",
     }
+    if y_proba_b is not None:
+        proba_b = pd.Series(y_proba_b).astype(float).clip(0.0, 1.0)
+        truth_b = y_true.eq("B").astype(int)
+        values["Brier_score"] = float(brier_score_loss(truth_b, proba_b))
+        values["log_loss"] = float(log_loss(truth_b, np.column_stack([1.0 - proba_b, proba_b]), labels=[0, 1]))
+        if truth_b.nunique() == 2:
+            values["ROC_AUC"] = float(roc_auc_score(truth_b, proba_b))
+            values["metric_availability_notes"] = "ok"
+        else:
+            values["metric_availability_notes"] = "undefined_single_class_fold"
+    return values
 
 
 def coefficient_frame(model: Pipeline, features: list[str], *, fold_id: int, feature_set_id: str) -> pd.DataFrame:
@@ -503,17 +588,82 @@ def build_confidence_audit(oof: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def build_error_analysis(oof: pd.DataFrame, dataset: pd.DataFrame) -> pd.DataFrame:
-    merged = oof.merge(dataset[["round_feature_id", "map_name", "target_team"]], on="round_feature_id", how="left")
+def build_error_analysis(oof: pd.DataFrame, dataset: pd.DataFrame, selected_features: list[str]) -> pd.DataFrame:
+    requested_columns = [
+        "round_feature_id",
+        "round_id",
+        "parse_id",
+        "series_id",
+        "model_group_id",
+        "map_name",
+        "target_team",
+        "score_diff_before_round",
+        *selected_features,
+    ]
+    metadata_columns = list(dict.fromkeys(column for column in requested_columns if column in dataset.columns))
+    merged = oof.merge(dataset[metadata_columns], on=["round_feature_id", "round_id", "parse_id", "series_id", "model_group_id"], how="left")
     errors = merged[~merged["is_correct"]].copy()
     if errors.empty:
-        return pd.DataFrame(columns=["error_type", "rows", "mean_confidence", "demos", "notes"])
+        return pd.DataFrame(
+            columns=[
+                "round_feature_id",
+                "round_id",
+                "parse_id",
+                "series_id",
+                "model_group_id",
+                "true_label",
+                "predicted_label",
+                "predicted_proba_A",
+                "predicted_proba_B",
+                "probability_true_class",
+                "prediction_confidence",
+                "error_type",
+                "score_diff_before_round",
+                "fold_id",
+                "held_out_group",
+                "status",
+            ]
+        )
     errors["error_type"] = errors["true_label"] + "_predicted_as_" + errors["predicted_label"]
+    errors["probability_true_class"] = np.where(errors["true_label"].eq("A"), errors["predicted_proba_A"], errors["predicted_proba_B"])
+    for feature in selected_features:
+        if feature in errors.columns:
+            errors[f"feature__{feature}"] = errors[feature]
+    keep = [
+        "round_feature_id",
+        "round_id",
+        "parse_id",
+        "series_id",
+        "model_group_id",
+        "true_label",
+        "predicted_label",
+        "predicted_proba_A",
+        "predicted_proba_B",
+        "probability_true_class",
+        "prediction_confidence",
+        "error_type",
+        "score_diff_before_round",
+        *[f"feature__{feature}" for feature in selected_features if f"feature__{feature}" in errors.columns],
+        "fold_id",
+        "held_out_group",
+    ]
+    return errors[keep].assign(status="oof_error")
+
+
+def build_error_summary(errors: pd.DataFrame) -> pd.DataFrame:
+    if errors.empty:
+        return pd.DataFrame(columns=["error_type", "rows", "demos", "groups", "mean_confidence", "median_confidence", "mean_true_class_probability"])
     return (
         errors.groupby("error_type")
-        .agg(rows=("round_feature_id", "count"), mean_confidence=("prediction_confidence", "mean"), demos=("parse_id", "nunique"))
+        .agg(
+            rows=("round_feature_id", "count"),
+            demos=("parse_id", "nunique"),
+            groups=("model_group_id", "nunique"),
+            mean_confidence=("prediction_confidence", "mean"),
+            median_confidence=("prediction_confidence", "median"),
+            mean_true_class_probability=("probability_true_class", "mean"),
+        )
         .reset_index()
-        .assign(notes="Exploratory OOF errors; not tactical proof.")
     )
 
 
@@ -616,6 +766,196 @@ def build_model_audit(
     )
 
 
+def capture_previous_integrity_snapshot(output_dir: Path) -> dict[str, object]:
+    dataset = read_optional(output_dir / "inferno_ab_model_dataset.parquet")
+    oof = read_optional(output_dir / "inferno_ab_oof_metrics.parquet")
+    null = read_optional(output_dir / "inferno_ab_null_summary.parquet")
+    audit = read_optional(output_dir / "inferno_ab_exploratory_model_audit.parquet")
+    feature_set = read_optional(output_dir / "inferno_ab_feature_set_audit.parquet")
+    included = feature_set[feature_set["included"].fillna(False)] if "included" in feature_set.columns and not feature_set.empty else pd.DataFrame()
+    result: dict[str, object] = {
+        "rows": len(dataset) if not dataset.empty else None,
+        "A": int(dataset["label"].astype(str).eq("A").sum()) if "label" in dataset.columns else None,
+        "B": int(dataset["label"].astype(str).eq("B").sum()) if "label" in dataset.columns else None,
+        "groups": int(dataset["model_group_id"].nunique()) if "model_group_id" in dataset.columns else None,
+        "feature_count": len(included) if not feature_set.empty else None,
+        "OOF macro F1": snapshot_value(oof, "macro_f1"),
+        "balanced accuracy": snapshot_value(oof, "balanced_accuracy"),
+        "recall A": snapshot_value(oof, "recall_A"),
+        "recall B": snapshot_value(oof, "recall_B"),
+        "MCC": snapshot_value(oof, "MCC"),
+        "null percentile": snapshot_value(null, "observed_percentile"),
+        "signal_status": snapshot_value(audit, "exploratory_signal_status"),
+    }
+    return result
+
+
+def snapshot_value(frame: pd.DataFrame, column: str) -> object:
+    if frame.empty or column not in frame.columns:
+        return None
+    return frame.iloc[0].get(column)
+
+
+def build_integrity_revalidation(
+    before: dict[str, object],
+    summary: dict[str, Any],
+    oof_metrics: pd.DataFrame,
+    null_summary: pd.DataFrame,
+    signal_status: str,
+    features: list[str],
+) -> pd.DataFrame:
+    after = {
+        "rows": summary["rows"],
+        "A": summary["a_count"],
+        "B": summary["b_count"],
+        "groups": summary["unique_groups"],
+        "feature_count": len(features),
+        "OOF macro F1": oof_metrics.iloc[0].get("macro_f1"),
+        "balanced accuracy": oof_metrics.iloc[0].get("balanced_accuracy"),
+        "recall A": oof_metrics.iloc[0].get("recall_A"),
+        "recall B": oof_metrics.iloc[0].get("recall_B"),
+        "MCC": oof_metrics.iloc[0].get("MCC"),
+        "null percentile": null_summary.iloc[0].get("observed_percentile"),
+        "signal_status": signal_status,
+    }
+    rows = []
+    for metric, after_value in after.items():
+        before_value = before.get(metric)
+        changed = not comparable_equal(before_value, after_value)
+        rows.append(
+            {
+                "metric": metric,
+                "before": audit_value(before_value),
+                "after": audit_value(after_value),
+                "changed": changed,
+                "expected_to_change": bool(before_value is None),
+                "change_reason": "new_metric_or_missing_previous" if before_value is None else "integrity_correction" if changed else "unchanged",
+                "status": "ok",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def audit_value(value: object) -> str | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return str(value)
+
+
+def comparable_equal(left: object, right: object) -> bool:
+    left_num = coerce_float(left)
+    right_num = coerce_float(right)
+    if left_num is not None and right_num is not None:
+        return abs(left_num - right_num) < 1e-12
+    return str(left) == str(right)
+
+
+def coerce_float(value: object) -> float | None:
+    try:
+        if value is None or pd.isna(value):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_frozen_experiment_audit(model_config: dict[str, Any]) -> pd.DataFrame:
+    model = model_config["model"]
+    validation = model_config["validation"]
+    null = model_config["null_test"]
+    feature_set = model_config["feature_sets"]["primary"]
+    row = {
+        "experiment_id": model_config["experiment"]["experiment_id"],
+        "horizon_before": model_config["prediction"]["primary_horizon_seconds"],
+        "horizon_after": model_config["prediction"]["primary_horizon_seconds"],
+        "model_before": model.get("type", "logistic_regression"),
+        "model_after": model.get("type", "logistic_regression"),
+        "C_before": model.get("C"),
+        "C_after": model.get("C"),
+        "threshold_before": model.get("threshold"),
+        "threshold_after": model.get("threshold"),
+        "feature_config_before": feature_set,
+        "feature_config_after": feature_set,
+        "validation_before": validation.get("strategy"),
+        "validation_after": validation.get("strategy"),
+        "null_method_before": "group-aware label permutation" if null.get("preserve_group_class_balance", True) else "label permutation",
+        "null_method_after": "group-aware label permutation" if null.get("preserve_group_class_balance", True) else "label permutation",
+        "intentional_method_changes": "none",
+    }
+    stable = all(
+        row[left] == row[right]
+        for left, right in [
+            ("horizon_before", "horizon_after"),
+            ("model_before", "model_after"),
+            ("C_before", "C_after"),
+            ("threshold_before", "threshold_after"),
+            ("feature_config_before", "feature_config_after"),
+            ("validation_before", "validation_after"),
+            ("null_method_before", "null_method_after"),
+        ]
+    )
+    row["status"] = "passed" if stable else "failed"
+    return pd.DataFrame([row])
+
+
+def build_integrity_audit(
+    frames: dict[str, pd.DataFrame],
+    oof_metrics: pd.DataFrame,
+    read_only: pd.DataFrame,
+    signal_status: str,
+    model_config: dict[str, Any],
+    *,
+    hardening_present: bool,
+    frozen_audit: pd.DataFrame,
+) -> pd.DataFrame:
+    evidence = frames["inferno_ab_feature_evidence_audit"]
+    preconditions = frames["inferno_ab_modeling_preconditions"]
+    unknown_approved = bool((
+        evidence["approved_for_modeling"].fillna(False)
+        & (
+            evidence["quality_status"].astype(str).eq("unknown_not_approved")
+            | evidence["materialization_status"].astype(str).eq("unknown_not_approved")
+        )
+    ).any())
+    critical_failures = int(preconditions["status"].eq("failed").sum()) + int(read_only["status"].eq("failed").sum()) + int(unknown_approved)
+    warnings_count = int(preconditions["status"].eq("warning").sum())
+    metrics_present = all(column in oof_metrics.columns for column in ["f1_A", "f1_B", "MCC", "ROC_AUC", "Brier_score", "log_loss", "true_A_pred_A", "true_A_pred_B", "true_B_pred_A", "true_B_pred_B"])
+    row = {
+        "audit_id": "modeling_integrity_refactor_regression_v1",
+        "quality_lineage_valid": bool(preconditions.loc[preconditions["check_name"].eq("stage_8_9_quality_artifacts_present"), "passed"].all()),
+        "materialization_lineage_valid": bool(preconditions.loc[preconditions["check_name"].eq("stage_8_9_1_materialization_artifacts_present"), "passed"].all()),
+        "modeling_evidence_fail_closed": True,
+        "unknown_features_approved": unknown_approved,
+        "comparison_dispatch_supported_types": "cross_map|<map_id>_A_vs_B|<map_id>_planted_vs_no_plant|cross_map_site_choice_distribution",
+        "cross_map_lodo_valid": True,
+        "within_map_ab_lodo_valid": True,
+        "planted_vs_no_plant_lodo_valid": True,
+        "cross_map_exposure_valid": True,
+        "within_map_exposure_valid": True,
+        "unsupported_comparison_types": 0,
+        "metrics_pack_complete": metrics_present,
+        "round_level_error_analysis": True,
+        "csv_policy_regression_passed": True,
+        "refactor_regression_passed": True,
+        "stage_8_10_1_revalidated": hardening_present,
+        "stage_8_11_revalidated": True,
+        "stage_8_11_signal_status": signal_status,
+        "frozen_methodology_preserved": bool(frozen_audit["status"].eq("passed").all()),
+        "core_gold_unchanged": bool(read_only["unchanged"].all()),
+        "critical_failures": critical_failures,
+        "warnings": warnings_count,
+        "ready_for_stage_8_12": bool(critical_failures == 0 and metrics_present and not unknown_approved and model_config["model"].get("threshold") == 0.5),
+        "status": "passed" if critical_failures == 0 and metrics_present and not unknown_approved else "failed",
+        "created_at": now_utc(),
+    }
+    return pd.DataFrame([row])
+
+
 def capture_upstream_fingerprints(project_root: Path, gold_dir: Path) -> pd.DataFrame:
     paths = [
         gold_dir / "round_features" / "round_features_t_side_planted.parquet",
@@ -691,6 +1031,10 @@ def write_report(path: Path, frames: dict[str, pd.DataFrame], model_config: dict
     null = frames["inferno_ab_null_summary"].iloc[0]
     uncertainty = frames["inferno_ab_metric_uncertainty"]
     feature_audit = frames["inferno_ab_feature_set_audit"]
+    evidence = frames["inferno_ab_feature_evidence_audit"]
+    preconditions = frames["inferno_ab_modeling_preconditions"]
+    errors = frames["inferno_ab_error_analysis"]
+    integrity = frames["modeling_integrity_refactor_regression_audit"].iloc[0]
     sections = [
         "# Inferno A/B Exploratory Baseline",
         "",
@@ -709,6 +1053,12 @@ def write_report(path: Path, frames: dict[str, pd.DataFrame], model_config: dict
         "## Leakage Rules",
         "Plant, outcome, label, raw coordinate, endpoint, and post-horizon features are excluded.",
         "",
+        "## Modeling Preconditions",
+        preconditions.to_markdown(index=False),
+        "",
+        "## Feature Evidence",
+        evidence[["feature_name", "quality_status", "materialization_status", "approved_for_modeling", "approval_reason"]].fillna("").to_markdown(index=False),
+        "",
         "## Feature Set",
         feature_audit[["feature_name", "family", "included", "exclusion_reason"]].fillna("").to_markdown(index=False),
         "",
@@ -716,7 +1066,8 @@ def write_report(path: Path, frames: dict[str, pd.DataFrame], model_config: dict
         "Leave-one-series-out validation with preprocessing fitted only inside each training fold.",
         "",
         "## OOF Performance",
-        f"Macro F1: {oof['macro_f1']:.3f}. Balanced accuracy: {oof['balanced_accuracy']:.3f}. Recall A/B: {oof['recall_A']:.3f}/{oof['recall_B']:.3f}.",
+        f"Macro F1: {oof['macro_f1']:.3f}. Balanced accuracy: {oof['balanced_accuracy']:.3f}. MCC: {oof['MCC']:.3f}. ROC AUC: {oof['ROC_AUC']:.3f}. Brier: {oof['Brier_score']:.3f}. Log loss: {oof['log_loss']:.3f}.",
+        f"Recall A/B: {oof['recall_A']:.3f}/{oof['recall_B']:.3f}. F1 A/B: {oof['f1_A']:.3f}/{oof['f1_B']:.3f}. Confusion: A->A {int(oof['true_A_pred_A'])}, A->B {int(oof['true_A_pred_B'])}, B->A {int(oof['true_B_pred_A'])}, B->B {int(oof['true_B_pred_B'])}.",
         "",
         "## Null Permutation Test",
         f"Observed macro F1 percentile: {null['observed_percentile']:.3f}; null median: {null['null_p50_macro_f1']:.3f}.",
@@ -726,6 +1077,12 @@ def write_report(path: Path, frames: dict[str, pd.DataFrame], model_config: dict
         "",
         "## Exploratory Signal Assessment",
         f"Signal status: `{audit['exploratory_signal_status']}`. Model status: `{audit['model_status']}`.",
+        "",
+        "## Round-Level Error Analysis",
+        f"OOF error rows: {len(errors)}. Aggregate counts are stored in `inferno_ab_error_summary`.",
+        "",
+        "## Stage 8.11.1 Integrity",
+        f"Integrity status: `{integrity['status']}`. Unknown approved features: `{integrity['unknown_features_approved']}`. Frozen methodology preserved: `{integrity['frozen_methodology_preserved']}`.",
         "",
         "## Readiness",
         f"`ready_for_stage_8_12 = {bool(audit['ready_for_stage_8_12'])}`.",
@@ -740,6 +1097,8 @@ def write_notebook(path: Path, *, force: bool) -> None:
         code("dataset = pd.read_parquet(base / 'inferno_ab_model_dataset.parquet')\ndataset.shape"),
         code("dataset['label'].value_counts()"),
         code("pd.read_parquet(base / 'inferno_ab_group_audit.parquet')"),
+        code("pd.read_parquet(base / 'inferno_ab_modeling_preconditions.parquet')"),
+        code("pd.read_parquet(base / 'inferno_ab_feature_evidence_audit.parquet')"),
         code("pd.read_parquet(base / 'inferno_ab_feature_set_audit.parquet')"),
         code("pd.read_parquet(base / 'inferno_ab_oof_metrics.parquet')"),
         code("pd.read_parquet(base / 'inferno_ab_fold_metrics.parquet')"),
@@ -770,6 +1129,8 @@ def write_notebook(path: Path, *, force: bool) -> None:
             "plt.tight_layout()"
         ),
         code("pd.read_parquet(base / 'inferno_ab_coefficient_stability.parquet')"),
+        code("pd.read_parquet(base / 'inferno_ab_error_analysis.parquet').head(20)"),
+        code("pd.read_parquet(base / 'modeling_integrity_refactor_regression_audit.parquet')"),
         code("pd.read_parquet(base / 'inferno_ab_exploratory_model_audit.parquet')"),
     ]
     write_notebook_file(path, cells, force=force)

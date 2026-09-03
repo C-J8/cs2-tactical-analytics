@@ -11,7 +11,9 @@ from src.analysis.tactical_finding_hardening import (
     build_raw_finding_evidence,
     build_tactical_finding_groups,
     classify_interpretation,
+    evaluate_finding_effect,
     taxonomy_reason,
+    temporal_exposure_sensitivity,
 )
 
 
@@ -206,6 +208,95 @@ def test_real_leave_one_demo_out_removes_each_demo_and_counts_flips() -> None:
     assert int(sensitivity["demos_evaluated"]) == 4
     assert int(sensitivity["leave_one_demo_out_checks"]) == 4
     assert int(sensitivity["direction_flips"]) >= 1
+
+
+def test_inferno_a_vs_b_dispatch_uses_inferno_only() -> None:
+    finding = pd.Series({"feature_name": "smokes_used_0_35", "comparison_type": "inferno_A_vs_B", "cohort": "t_side_planted"})
+    rounds = pd.DataFrame(
+        [
+            {"map_id": "inferno", "target_site_model_label": "A", "label_confidence": "high", "smokes_used_0_35": 1},
+            {"map_id": "inferno", "target_site_model_label": "B", "label_confidence": "high", "smokes_used_0_35": 4},
+            {"map_id": "mirage", "target_site_model_label": "B", "label_confidence": "high", "smokes_used_0_35": 99},
+        ]
+    )
+
+    effect = evaluate_finding_effect(rounds, finding, [DummyMap("mirage", "Mirage"), DummyMap("inferno", "Inferno")])
+
+    assert effect["effect"] == 3.0
+    assert effect["effect_method"] == "within_map_b_minus_a_median"
+
+
+def test_planted_vs_no_plant_dispatch_uses_same_map_only() -> None:
+    finding = pd.Series({"feature_name": "flashes_used_0_35", "comparison_type": "mirage_planted_vs_no_plant", "cohort": "planted_vs_no_plant"})
+    rounds = pd.DataFrame(
+        [
+            {"map_id": "mirage", "target_site_model_label": "A", "label_confidence": "high", "flashes_used_0_35": 4},
+            {"map_id": "mirage", "target_site_model_label": "unknown", "label_confidence": "", "flashes_used_0_35": 1},
+            {"map_id": "inferno", "target_site_model_label": "unknown", "label_confidence": "", "flashes_used_0_35": 99},
+        ]
+    )
+
+    effect = evaluate_finding_effect(rounds, finding, [DummyMap("mirage", "Mirage"), DummyMap("inferno", "Inferno")])
+
+    assert effect["effect"] == -3.0
+    assert effect["effect_method"] == "within_map_no_plant_minus_planted_median"
+
+
+def test_unknown_comparison_type_fails_closed() -> None:
+    finding = pd.Series({"feature_name": "smokes_used_0_35", "comparison_type": "mystery"})
+    rounds = pd.DataFrame([{"map_id": "inferno", "smokes_used_0_35": 1}])
+
+    effect = evaluate_finding_effect(rounds, finding, [DummyMap("mirage", "Mirage"), DummyMap("inferno", "Inferno")])
+
+    assert effect["status"] == "unsupported_comparison_type"
+
+
+def test_within_map_lodo_recomputes_b_minus_a_after_removal() -> None:
+    finding = pd.DataFrame(
+        [
+            {
+                **candidate("mm_eda_0013", "smokes_used_0_35", "t_side_planted", "direct_feature"),
+                "direction": "higher",
+                "comparison_type": "inferno_A_vs_B",
+                "finding_concept_id": "inferno.site.smokes",
+                "eligible_before_hardening": True,
+            }
+        ]
+    )
+    rounds = pd.DataFrame(
+        [
+            {"map_id": "inferno", "parse_id": "a1", "target_site_model_label": "A", "label_confidence": "high", "smokes_used_0_35": 1},
+            {"map_id": "inferno", "parse_id": "a2", "target_site_model_label": "A", "label_confidence": "high", "smokes_used_0_35": 1},
+            {"map_id": "inferno", "parse_id": "b1", "target_site_model_label": "B", "label_confidence": "high", "smokes_used_0_35": 4},
+            {"map_id": "inferno", "parse_id": "b2", "target_site_model_label": "B", "label_confidence": "high", "smokes_used_0_35": 0},
+            {"map_id": "mirage", "parse_id": "m1", "target_site_model_label": "B", "label_confidence": "high", "smokes_used_0_35": 99},
+        ]
+    )
+
+    sensitivity = build_finding_demo_sensitivity(finding, rounds, [DummyMap("mirage", "Mirage"), DummyMap("inferno", "Inferno")]).iloc[0]
+
+    assert sensitivity["effect_method"] == "within_map_b_minus_a_median"
+    assert int(sensitivity["demos_evaluated"]) == 4
+
+
+def test_fully_exposed_a_vs_b_uses_dispatcher() -> None:
+    finding = pd.Series({"feature_name": "smokes_used_75_85", "comparison_type": "inferno_A_vs_B", "cohort": "t_side_planted", "window_end": 85})
+    rounds = pd.DataFrame(
+        [
+            {"map_id": "inferno", "target_site_model_label": "A", "label_confidence": "high", "smokes_used_75_85": 1, "round_duration_seconds": 90},
+            {"map_id": "inferno", "target_site_model_label": "A", "label_confidence": "high", "smokes_used_75_85": 1, "round_duration_seconds": 90},
+            {"map_id": "inferno", "target_site_model_label": "A", "label_confidence": "high", "smokes_used_75_85": 1, "round_duration_seconds": 90},
+            {"map_id": "inferno", "target_site_model_label": "B", "label_confidence": "high", "smokes_used_75_85": 3, "round_duration_seconds": 90},
+            {"map_id": "inferno", "target_site_model_label": "B", "label_confidence": "high", "smokes_used_75_85": 3, "round_duration_seconds": 90},
+            {"map_id": "inferno", "target_site_model_label": "B", "label_confidence": "high", "smokes_used_75_85": 3, "round_duration_seconds": 90},
+        ]
+    )
+
+    sensitivity = temporal_exposure_sensitivity(finding, rounds, [DummyMap("mirage", "Mirage"), DummyMap("inferno", "Inferno")], 0.70)
+
+    assert sensitivity["fully_exposed_effect"] == 2.0
+    assert sensitivity["fully_exposed_rows_reference"] == 3
+    assert sensitivity["fully_exposed_rows_comparison"] == 3
 
 
 def test_early_windows_same_direction_consolidate_to_one_concept() -> None:

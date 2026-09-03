@@ -42,6 +42,7 @@ OUTPUT_NAMES = [
     "modeling_context_findings",
     "tactical_finding_hardening_read_only_audit",
     "tactical_finding_hardening_audit",
+    "tactical_finding_sensitivity_revalidation",
 ]
 
 REQUIRED_STAGE_8_10_INPUTS = [
@@ -96,6 +97,7 @@ def run_tactical_finding_hardening(
     gold_dir = project_root / "data" / "gold"
     stage_8_10_dir = gold_dir / "analysis" / "multi_map_tactical_eda"
     output_dir = gold_dir / "analysis" / "tactical_finding_hardening"
+    previous_sensitivity = capture_sensitivity_revalidation_snapshot(output_dir)
 
     core_before = capture_core_fingerprints(project_root, gold_dir)
     stage_before = capture_stage_output_fingerprints(stage_8_10_dir)
@@ -150,6 +152,7 @@ def run_tactical_finding_hardening(
         map_requests=map_requests,
         source_raw_candidates=len(inputs["multi_map_finding_candidates"]),
     )
+    frames["tactical_finding_sensitivity_revalidation"] = build_sensitivity_revalidation(previous_sensitivity, frames)
 
     outputs: dict[str, Path] = {}
     if not dry_run:
@@ -465,7 +468,13 @@ def apply_temporal_exposure(
     available = []
     all_effects = []
     fully_effects = []
+    all_directions = []
+    fully_directions = []
     same_directions = []
+    fully_ref_rows = []
+    fully_comp_rows = []
+    fully_ref_shares = []
+    fully_comp_shares = []
     for _, row in result.iterrows():
         end = safe_float(row.get("window_end"))
         is_late = end is not None and end >= late_start
@@ -493,7 +502,13 @@ def apply_temporal_exposure(
         available.append(bool(sensitivity.get("fully_exposed_analysis_available", False)))
         all_effects.append(sensitivity.get("all_round_effect", row.get("effect_size")))
         fully_effects.append(sensitivity.get("fully_exposed_effect"))
+        all_directions.append(sensitivity.get("all_round_direction"))
+        fully_directions.append(sensitivity.get("fully_exposed_direction"))
         same_directions.append(sensitivity.get("same_direction_after_exposure_filter"))
+        fully_ref_rows.append(sensitivity.get("fully_exposed_rows_reference"))
+        fully_comp_rows.append(sensitivity.get("fully_exposed_rows_comparison"))
+        fully_ref_shares.append(sensitivity.get("fully_exposed_share_reference"))
+        fully_comp_shares.append(sensitivity.get("fully_exposed_share_comparison"))
     result["reference_exposure_share"] = refs
     result["comparison_exposure_share"] = comps
     result["minimum_exposure_share"] = threshold
@@ -503,7 +518,13 @@ def apply_temporal_exposure(
     result["fully_exposed_analysis_available"] = available
     result["all_round_effect"] = all_effects
     result["fully_exposed_effect"] = fully_effects
+    result["all_round_direction"] = all_directions
+    result["fully_exposed_direction"] = fully_directions
     result["same_direction_after_exposure_filter"] = same_directions
+    result["fully_exposed_rows_reference"] = fully_ref_rows
+    result["fully_exposed_rows_comparison"] = fully_comp_rows
+    result["fully_exposed_share_reference"] = fully_ref_shares
+    result["fully_exposed_share_comparison"] = fully_comp_shares
     result["exposure_sensitivity_status"] = statuses
     return result
 
@@ -517,69 +538,123 @@ def temporal_exposure_sensitivity(
     feature = str(finding.get("feature_name"))
     end = safe_float(finding.get("window_end"))
     if rounds is None or rounds.empty or end is None or feature not in rounds.columns:
-        return {
-            "fully_exposed_analysis_available": False,
-            "all_round_effect": safe_float(finding.get("effect_size")),
-            "fully_exposed_effect": None,
-            "same_direction_after_exposure_filter": None,
-            "exposure_sensitivity_status": "not_applicable",
-        }
-    scoped = rows_for_cross_map_finding(rounds, finding, map_requests)
+        return exposure_result(
+            available=False,
+            all_effect=safe_float(finding.get("effect_size")),
+            all_direction=classify_direction(finding.get("direction")),
+            status="not_applicable",
+        )
+    full = evaluate_finding_effect(rounds, finding, map_requests)
+    if str(full["status"]) == "unsupported_comparison_type":
+        return exposure_result(
+            available=False,
+            all_effect=None,
+            all_direction="flat",
+            status="not_applicable",
+        )
+    scoped = full["rows"]
     if scoped.empty:
-        return {
-            "fully_exposed_analysis_available": False,
-            "all_round_effect": safe_float(finding.get("effect_size")),
-            "fully_exposed_effect": None,
-            "same_direction_after_exposure_filter": None,
-            "exposure_sensitivity_status": "insufficient_exposure",
-        }
+        return exposure_result(
+            available=False,
+            all_effect=safe_float(finding.get("effect_size")),
+            all_direction=classify_direction(finding.get("direction")),
+            status="insufficient_exposure",
+            reference_rows=0,
+            comparison_rows=0,
+            reference_share=0.0,
+            comparison_share=0.0,
+        )
     duration_col = "round_exposure_seconds" if "round_exposure_seconds" in scoped.columns else "round_duration_seconds"
     if duration_col not in scoped.columns:
-        return {
-            "fully_exposed_analysis_available": False,
-            "all_round_effect": cross_map_median_difference(scoped, finding, map_requests),
-            "fully_exposed_effect": None,
-            "same_direction_after_exposure_filter": None,
-            "exposure_sensitivity_status": "not_applicable",
-        }
+        return exposure_result(
+            available=False,
+            all_effect=full["effect"],
+            all_direction=full["direction"],
+            status="not_applicable",
+        )
     durations = pd.to_numeric(scoped[duration_col], errors="coerce")
     fully = scoped[durations >= float(end)].copy()
-    all_effect = cross_map_median_difference(scoped, finding, map_requests)
-    full_direction = classify_difference(all_effect)
+    all_effect = safe_float(full["effect"])
+    full_direction = str(full["direction"])
     if fully.empty:
-        return {
-            "fully_exposed_analysis_available": False,
-            "all_round_effect": all_effect,
-            "fully_exposed_effect": None,
-            "same_direction_after_exposure_filter": None,
-            "exposure_sensitivity_status": "insufficient_exposure",
-        }
-    counts = fully.groupby("map_id")[feature].count().to_dict() if "map_id" in fully.columns else {}
-    shares = scoped.groupby("map_id").size().to_dict() if "map_id" in scoped.columns else {}
-    enough_rows = all(int(counts.get(request.map_id, 0)) >= 3 for request in map_requests[:2])
-    enough_share = all(safe_divide(counts.get(request.map_id, 0), shares.get(request.map_id, 0)) is not None and safe_divide(counts.get(request.map_id, 0), shares.get(request.map_id, 0)) >= minimum_exposure_share for request in map_requests[:2])
+        return exposure_result(
+            available=False,
+            all_effect=all_effect,
+            all_direction=full_direction,
+            status="insufficient_exposure",
+            reference_rows=0,
+            comparison_rows=0,
+            reference_share=0.0,
+            comparison_share=0.0,
+        )
+    fully_effect = evaluate_finding_effect(fully, finding, map_requests)
+    ref_rows = int(fully_effect["reference_rows"])
+    comp_rows = int(fully_effect["comparison_rows"])
+    ref_share = safe_divide(ref_rows, full["reference_rows"])
+    comp_share = safe_divide(comp_rows, full["comparison_rows"])
+    enough_rows = ref_rows >= 3 and comp_rows >= 3
+    enough_share = (ref_share is not None and ref_share >= minimum_exposure_share) and (comp_share is not None and comp_share >= minimum_exposure_share)
     if not enough_rows or not enough_share:
-        return {
-            "fully_exposed_analysis_available": bool(enough_rows),
-            "all_round_effect": all_effect,
-            "fully_exposed_effect": cross_map_median_difference(fully, finding, map_requests) if enough_rows else None,
-            "same_direction_after_exposure_filter": None,
-            "exposure_sensitivity_status": "insufficient_exposure",
-        }
-    fully_effect = cross_map_median_difference(fully, finding, map_requests)
-    fully_direction = classify_difference(fully_effect)
+        return exposure_result(
+            available=bool(enough_rows),
+            all_effect=all_effect,
+            all_direction=full_direction,
+            fully_effect=fully_effect["effect"] if enough_rows else None,
+            fully_direction=fully_effect["direction"] if enough_rows else None,
+            status="insufficient_exposure",
+            reference_rows=ref_rows,
+            comparison_rows=comp_rows,
+            reference_share=ref_share,
+            comparison_share=comp_share,
+        )
+    fully_direction = str(fully_effect["direction"])
     same = bool(full_direction != "flat" and fully_direction == full_direction)
     if not same:
         status = "reversed"
-    elif abs(fully_effect or 0.0) < abs(all_effect or 0.0) * 0.5:
+    elif abs(safe_float(fully_effect["effect"]) or 0.0) < abs(all_effect or 0.0) * 0.5:
         status = "weakened"
     else:
         status = "stable"
+    return exposure_result(
+        available=True,
+        all_effect=all_effect,
+        all_direction=full_direction,
+        fully_effect=fully_effect["effect"],
+        fully_direction=fully_direction,
+        same=same,
+        status=status,
+        reference_rows=ref_rows,
+        comparison_rows=comp_rows,
+        reference_share=ref_share,
+        comparison_share=comp_share,
+    )
+
+
+def exposure_result(
+    *,
+    available: bool,
+    all_effect: object,
+    all_direction: object,
+    status: str,
+    fully_effect: object = None,
+    fully_direction: object = None,
+    same: bool | None = None,
+    reference_rows: object = None,
+    comparison_rows: object = None,
+    reference_share: object = None,
+    comparison_share: object = None,
+) -> dict[str, object]:
     return {
-        "fully_exposed_analysis_available": True,
+        "fully_exposed_analysis_available": available,
         "all_round_effect": all_effect,
         "fully_exposed_effect": fully_effect,
+        "all_round_direction": all_direction,
+        "fully_exposed_direction": fully_direction,
         "same_direction_after_exposure_filter": same,
+        "fully_exposed_rows_reference": reference_rows,
+        "fully_exposed_rows_comparison": comparison_rows,
+        "fully_exposed_share_reference": reference_share,
+        "fully_exposed_share_comparison": comparison_share,
         "exposure_sensitivity_status": status,
     }
 
@@ -922,7 +997,10 @@ def build_finding_demo_sensitivity(raw: pd.DataFrame, rounds: pd.DataFrame, map_
                     "leave_one_demo_out_checks": 0,
                     "stable_direction_after_demo_removal": True,
                     "direction_flips": 0,
+                    "flat_after_removal": 0,
                     "demo_fragile": False,
+                    "comparison_type": finding.get("comparison_type"),
+                    "effect_method": "aggregate_context",
                     "sensitivity_method": "not_applicable",
                     "status": "aggregate_context",
                 }
@@ -943,7 +1021,10 @@ def build_finding_demo_sensitivity(raw: pd.DataFrame, rounds: pd.DataFrame, map_
                     "leave_one_demo_out_checks": 0,
                     "stable_direction_after_demo_removal": False,
                     "direction_flips": 0,
+                    "flat_after_removal": 0,
                     "demo_fragile": False,
+                    "comparison_type": finding.get("comparison_type"),
+                    "effect_method": "not_available",
                     "sensitivity_method": "not_available",
                     "status": "not_evaluated",
                 }
@@ -964,7 +1045,10 @@ def build_finding_demo_sensitivity(raw: pd.DataFrame, rounds: pd.DataFrame, map_
                 "leave_one_demo_out_checks": sensitivity["leave_one_demo_out_checks"],
                 "stable_direction_after_demo_removal": sensitivity["stable_direction_after_demo_removal"],
                 "direction_flips": sensitivity["direction_flips"],
+                "flat_after_removal": sensitivity["flat_after_removal"],
                 "demo_fragile": sensitivity["demo_fragile"],
+                "comparison_type": sensitivity["comparison_type"],
+                "effect_method": sensitivity["effect_method"],
                 "sensitivity_method": sensitivity["sensitivity_method"],
                 "status": sensitivity["status"],
             }
@@ -973,13 +1057,27 @@ def build_finding_demo_sensitivity(raw: pd.DataFrame, rounds: pd.DataFrame, map_
 
 
 def demo_sensitivity_for_feature(finding: pd.Series, rounds: pd.DataFrame, map_requests: list[MapRequest]) -> dict[str, object]:
-    full_direction = classify_direction(finding.get("direction"))
-    scoped = rows_for_cross_map_finding(rounds, finding, map_requests)
+    full = evaluate_finding_effect(rounds, finding, map_requests)
+    if str(full["status"]) == "unsupported_comparison_type":
+        return {
+            "demos_evaluated": 0,
+            "leave_one_demo_out_checks": 0,
+            "stable_direction_after_demo_removal": False,
+            "direction_flips": 0,
+            "flat_after_removal": 0,
+            "demo_fragile": False,
+            "comparison_type": str(finding.get("comparison_type") or "unknown"),
+            "effect_method": full["effect_method"],
+            "sensitivity_method": "not_available",
+            "status": "unsupported_comparison_type",
+        }
+    full_direction = str(full["direction"])
+    scoped = full["rows"]
     removals = []
     for parse_id in scoped["parse_id"].dropna().unique() if "parse_id" in scoped.columns else []:
         subset = scoped[~scoped["parse_id"].eq(parse_id)]
-        effect = cross_map_median_difference(subset, finding, map_requests)
-        removals.append(classify_difference(effect))
+        effect = evaluate_finding_effect(subset, finding, map_requests)
+        removals.append(str(effect["direction"]))
     nonflat_removals = [value for value in removals if value != "flat"]
     stable = bool(nonflat_removals and all(value == full_direction for value in nonflat_removals))
     fragile = bool(nonflat_removals and any(value != full_direction for value in nonflat_removals))
@@ -988,7 +1086,10 @@ def demo_sensitivity_for_feature(finding: pd.Series, rounds: pd.DataFrame, map_r
         "leave_one_demo_out_checks": len(removals),
         "stable_direction_after_demo_removal": stable,
         "direction_flips": int(sum(value != full_direction and value != "flat" for value in removals)),
+        "flat_after_removal": int(sum(value == "flat" for value in removals)),
         "demo_fragile": fragile or len(removals) < 2,
+        "comparison_type": str(finding.get("comparison_type") or "unknown"),
+        "effect_method": full["effect_method"],
         "sensitivity_method": "leave_one_demo_out",
         "status": "warning" if fragile or len(removals) < 2 else "ok",
     }
@@ -1117,6 +1218,76 @@ def build_final_audit(
     )
 
 
+def capture_sensitivity_revalidation_snapshot(output_dir: Path) -> dict[str, object]:
+    audit = read_optional(output_dir / "tactical_finding_hardening_audit.parquet")
+    demo = read_optional(output_dir / "finding_demo_sensitivity.parquet")
+    raw = read_optional(output_dir / "raw_finding_evidence.parquet")
+    ranking = read_optional(output_dir / "hardened_tactical_finding_ranking.parquet")
+    consolidated = read_optional(output_dir / "consolidated_tactical_findings.parquet")
+    return sensitivity_metrics_from_frames(
+        {
+            "tactical_finding_hardening_audit": audit,
+            "finding_demo_sensitivity": demo,
+            "raw_finding_evidence": raw,
+            "hardened_tactical_finding_ranking": ranking,
+            "consolidated_tactical_findings": consolidated,
+        }
+    )
+
+
+def build_sensitivity_revalidation(before: dict[str, object], frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    after = sensitivity_metrics_from_frames(frames)
+    rows = []
+    for metric, after_value in after.items():
+        before_value = before.get(metric)
+        before_num = safe_float(before_value)
+        after_num = safe_float(after_value)
+        difference = after_num - before_num if before_num is not None and after_num is not None else None
+        rows.append(
+            {
+                "metric": metric,
+                "before": before_value,
+                "after": after_value,
+                "difference": difference,
+                "reason": "comparison_dispatch_revalidation" if before_value is not None and before_value != after_value else "unchanged_or_no_previous",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def sensitivity_metrics_from_frames(frames: dict[str, pd.DataFrame]) -> dict[str, object]:
+    audit = frames.get("tactical_finding_hardening_audit", pd.DataFrame())
+    demo = frames.get("finding_demo_sensitivity", pd.DataFrame())
+    raw = frames.get("raw_finding_evidence", pd.DataFrame())
+    ranking = frames.get("hardened_tactical_finding_ranking", pd.DataFrame())
+    consolidated = frames.get("consolidated_tactical_findings", pd.DataFrame())
+    return {
+        "demo_fragile_findings": first_or_count(audit, "demo_fragile_findings", demo, "demo_fragile"),
+        "stable_lodo_findings": int(demo["stable_direction_after_demo_removal"].fillna(False).sum()) if "stable_direction_after_demo_removal" in demo.columns else None,
+        "fully_exposed_available": int(raw["fully_exposed_analysis_available"].fillna(False).sum()) if "fully_exposed_analysis_available" in raw.columns else None,
+        "exposure_reversals": int(raw["exposure_sensitivity_status"].astype(str).eq("reversed").sum()) if "exposure_sensitivity_status" in raw.columns else None,
+        "hardened_ranked_findings": len(ranking) if not ranking.empty else first_or_none(audit, "hardened_ranked_findings"),
+        "high_descriptive": int(consolidated["evidence_quality"].astype(str).eq("high_descriptive").sum()) if "evidence_quality" in consolidated.columns else None,
+        "moderate_descriptive": int(consolidated["evidence_quality"].astype(str).eq("moderate_descriptive").sum()) if "evidence_quality" in consolidated.columns else None,
+        "tentative": int(consolidated["evidence_quality"].astype(str).eq("tentative").sum()) if "evidence_quality" in consolidated.columns else None,
+    }
+
+
+def first_or_count(audit: pd.DataFrame, audit_column: str, frame: pd.DataFrame, count_column: str) -> object:
+    value = first_or_none(audit, audit_column)
+    if value is not None:
+        return value
+    if count_column in frame.columns:
+        return int(frame[count_column].fillna(False).sum())
+    return None
+
+
+def first_or_none(frame: pd.DataFrame, column: str) -> object:
+    if frame.empty or column not in frame.columns:
+        return None
+    return frame.iloc[0].get(column)
+
+
 def capture_stage_output_fingerprints(stage_dir: Path) -> pd.DataFrame:
     rows = []
     for name in STAGE_8_10_OUTPUT_NAMES:
@@ -1207,6 +1378,82 @@ def cross_map_median_difference(frame: pd.DataFrame, finding: pd.Series, map_req
     if reference.empty or comparison.empty:
         return None
     return float(comparison.median() - reference.median())
+
+
+def evaluate_finding_effect(frame: pd.DataFrame, finding: pd.Series, map_requests: list[MapRequest]) -> dict[str, object]:
+    comparison_type = str(finding.get("comparison_type") or finding.get("comparison") or "unknown")
+    feature = str(finding.get("feature_name"))
+    if frame.empty or feature not in frame.columns:
+        return effect_result(frame.iloc[0:0].copy(), None, "not_available", comparison_type, 0, 0)
+    if comparison_type == "cross_map":
+        scoped = rows_for_cross_map_finding(frame, finding, map_requests)
+        reference_map = map_requests[0].map_id
+        comparison_map = map_requests[1].map_id
+        reference = numeric_values(scoped[scoped["map_id"].eq(reference_map)], feature)
+        comparison = numeric_values(scoped[scoped["map_id"].eq(comparison_map)], feature)
+        effect = median_difference(comparison, reference)
+        return effect_result(scoped, effect, "cross_map_median_difference", comparison_type, len(reference), len(comparison))
+    if comparison_type.endswith("_A_vs_B"):
+        map_id = comparison_type.removesuffix("_A_vs_B")
+        scoped = rows_for_finding(frame, finding, map_id)
+        labels = scoped.get("target_site_model_label", pd.Series(index=scoped.index, dtype=object)).astype(str)
+        confidence = scoped.get("label_confidence", pd.Series(index=scoped.index, dtype=object)).astype(str).str.casefold()
+        planted = confidence.eq("high") & labels.isin(["A", "B"])
+        reference = numeric_values(scoped[planted & labels.eq("A")], feature)
+        comparison = numeric_values(scoped[planted & labels.eq("B")], feature)
+        effect = median_difference(comparison, reference)
+        return effect_result(scoped[planted].copy(), effect, "within_map_b_minus_a_median", comparison_type, len(reference), len(comparison))
+    if comparison_type.endswith("_planted_vs_no_plant"):
+        map_id = comparison_type.removesuffix("_planted_vs_no_plant")
+        if frame.empty or "map_id" not in frame.columns:
+            scoped = frame.iloc[0:0].copy()
+        else:
+            scoped = frame[frame["map_id"].eq(map_id)].copy()
+        labels = scoped.get("target_site_model_label", pd.Series(index=scoped.index, dtype=object)).astype(str)
+        confidence = scoped.get("label_confidence", pd.Series(index=scoped.index, dtype=object)).astype(str).str.casefold()
+        planted_mask = confidence.eq("high") & labels.isin(["A", "B"])
+        reference = numeric_values(scoped[planted_mask], feature)
+        comparison = numeric_values(scoped[~planted_mask], feature)
+        effect = median_difference(comparison, reference)
+        return effect_result(scoped, effect, "within_map_no_plant_minus_planted_median", comparison_type, len(reference), len(comparison))
+    if comparison_type == "cross_map_site_choice_distribution":
+        return effect_result(frame.iloc[0:0].copy(), None, "not_applicable", comparison_type, 0, 0, status="not_applicable")
+    return effect_result(frame.iloc[0:0].copy(), None, "unsupported_comparison_type", comparison_type, 0, 0, status="unsupported_comparison_type")
+
+
+def numeric_values(frame: pd.DataFrame, feature: str) -> pd.Series:
+    if frame.empty or feature not in frame.columns:
+        return pd.Series(dtype=float)
+    return pd.to_numeric(frame[feature], errors="coerce").dropna()
+
+
+def median_difference(comparison: pd.Series, reference: pd.Series) -> float | None:
+    if reference.empty or comparison.empty:
+        return None
+    return float(comparison.median() - reference.median())
+
+
+def effect_result(
+    rows: pd.DataFrame,
+    effect: float | None,
+    method: str,
+    comparison_type: str,
+    reference_rows: int,
+    comparison_rows: int,
+    *,
+    status: str | None = None,
+) -> dict[str, object]:
+    final_status = status or ("ok" if effect is not None else "insufficient_rows")
+    return {
+        "rows": rows,
+        "effect": effect,
+        "direction": classify_difference(effect),
+        "effect_method": method,
+        "comparison_type": comparison_type,
+        "reference_rows": reference_rows,
+        "comparison_rows": comparison_rows,
+        "status": final_status,
+    }
 
 
 def select_representative(group: pd.DataFrame, settings: dict[str, Any]) -> pd.Series:

@@ -1,6 +1,6 @@
 # cs2-tactical-analytics
 
-Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.11 -- Inferno A/B Exploratory Baseline**.
+Offline-first CS2 tactical analytics pipeline currently implemented through **Stage 8.12 -- Inferno Sample Expansion & Modeling Readiness**.
 
 Project direction:
 
@@ -8,7 +8,7 @@ Project direction:
 HLTV -> demos .dem -> CS2 parser -> analytical tables -> round features -> ML model -> dashboard
 ```
 
-The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, a read-only Inferno feature-quality gate, a feature-materialization repair stage that restores flash/HE/score features without relaxing quality thresholds, a read-only multi-map tactical EDA comparing Vitality T-side behavior on Mirage vs Inferno, hardened tactical finding consolidation that turns raw comparison rows into auditable tactical concepts, and a controlled Inferno A/B exploratory baseline at a fixed 35-second horizon. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
+The repository currently covers catalog ingestion, local demo intake/extraction, metadata probing, Awpy parsing, parse-quality gates, full-round feature engineering, round-state resolution, side-specific datasets, auditable T-side tactical EDA, ranked findings, a concrete round-level manual-review pack, a leakage-controlled A/B baseline, baseline error interpretation, a focused feature-refinement experiment, candidate promotion, final MVP reporting, feature-contract freezing, a versioned Mirage map/region registry, a map-ready feature-engineering refactor, a formal Mirage regression gate, conservative Inferno onboarding, canonical map identity, scoped multi-map parsing, a safe multi-map parse gate, generic area discovery from real parser `place` + X/Y/Z evidence, audited Inferno physical/semantic region mapping, scoped Inferno feature materialization into consolidated Mirage + Inferno Gold tables, a read-only Inferno feature-quality gate, a feature-materialization repair stage that restores flash/HE/score features without relaxing quality thresholds, a read-only multi-map tactical EDA comparing Vitality T-side behavior on Mirage vs Inferno, hardened tactical finding consolidation that turns raw comparison rows into auditable tactical concepts, a controlled Inferno A/B exploratory baseline at a fixed 35-second horizon, a modeling integrity gate that validates real quality/materialization lineage, comparison-aware sensitivity, complete metrics, row-level OOF errors, and shared-helper regressions, and an Inferno sample-expansion readiness gate that measures independent demos, series, opponents, A/B coverage, concentration, and next data targets without tuning. Model deployment, dashboards, BigQuery, and Streamlit are not implemented yet.
 
 ## Current Status
 
@@ -42,9 +42,11 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 - 1 Stage 8.9 Inferno feature-quality gate with 122 scoped Inferno rounds, 477 evaluated features, 4/4 required semantics healthy, 0 dataset-reconciliation failures, 0 domain failures, 0 temporal failures, 0 label conflicts, 0 unexpected missingness blockers, 166 warnings, `ready_for_multi_map_eda = true`, and `modeling_readiness_level = exploratory_only`;
 - 1 Stage 8.9.1 feature-materialization repair with flash and HE usage rebuilt from `grenades.parquet`, `score_diff_before_round` filled for all scoped Inferno rounds, explicit unresolved endpoint metadata, 0 failed repair checks, and the Inferno quality gate recovered to `status = passed`;
 - 1 Stage 8.10 read-only multi-map EDA with Mirage + Inferno, 17 Mirage demos, 5 Inferno demos, 180 Mirage T rounds, 65 Inferno T rounds, 98 Mirage planted T rounds, 40 Inferno planted T rounds, 276 ranked-eligible comparable features, 25 ranked findings, and `ready_for_stage_8_11 = true`;
-- 1 Stage 8.10.1 hardening pass with 2,760 raw candidates, 79 tactical concepts, 349 consolidated findings, 7 hardened ranked findings, 2,411 redundant candidates collapsed, 1,130 late-window candidates downgraded, 69 demo-fragile findings after real leave-one-demo-out sensitivity, 15 taxonomy corrections, 0 critical failures, and `ready_for_stage_8_11 = true`;
-- 1 Stage 8.11 Inferno A/B exploratory baseline with 40 high-confidence Inferno planted T-side rounds, 22 A / 18 B labels, 5 leave-one-series-out groups, 8 leakage-safe predictors at 35 seconds, OOF macro F1 `0.472`, balanced accuracy `0.472`, null percentile `0.470`, exploratory signal status `no_signal`, `model_status = exploratory_only`, and `ready_for_stage_8_12 = true`;
-- 257 tests passing and `ruff check .` passing.
+- 1 Stage 8.10.1 hardening pass with 2,760 raw candidates, 79 tactical concepts, 349 consolidated findings, 9 hardened ranked findings, 2,411 redundant candidates collapsed, 1,130 late-window candidates downgraded, 9 demo-fragile findings after comparison-aware leave-one-demo-out sensitivity, 661 exposure reversals after comparison-aware fully-exposed sensitivity, 15 taxonomy corrections, 0 critical failures, and `ready_for_stage_8_11 = true`;
+- 1 Stage 8.11 Inferno A/B exploratory baseline with 40 high-confidence Inferno planted T-side rounds, 22 A / 18 B labels, 5 leave-one-series-out groups, 8 leakage-safe predictors at 35 seconds, OOF macro F1 `0.472`, balanced accuracy `0.472`, MCC `-0.055`, ROC AUC `0.487`, Brier score `0.261`, log loss `0.715`, null percentile `0.470`, exploratory signal status `no_signal`, `model_status = exploratory_only`, and `ready_for_stage_8_12 = true`;
+- 1 Stage 8.11.1 modeling integrity gate with real Stage 8.9/8.9.1 lineage, fail-closed feature evidence, 11 candidate features audited, 8 approved model predictors, 21 round-level OOF errors, frozen methodology preserved, core Gold unchanged, `status = passed`, and `ready_for_stage_8_12 = true`;
+- 1 Stage 8.12 Inferno sample-expansion readiness gate with 5 Inferno demos, 5 independent series, 4 inferred opponents, 40 planted T-side model rows, 22 A / 18 B labels, 5 model groups, 0 new demos added by the stage, `data_readiness = expanded_but_limited`, `modeling_sample_ready = false`, frozen baseline unchanged at macro F1 `0.472`, balanced accuracy `0.472`, MCC `-0.055`, null percentile `0.470`, `signal_status = no_signal`, and `recommended_next_action = continue_sample_expansion`;
+- 290 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -126,8 +128,10 @@ Important dependency rules:
 - Stage 8.9 reads the scoped Gold outputs from Stage 8.8 and writes only validation outputs. It checks integrity, missingness, domains, degeneracy, semantic health, labels, sample size, cross-map sanity, read-only fingerprints, and Mirage regression status. It does not rebuild features, change mappings, train models, produce predictions, or make tactical conclusions.
 - Stage 8.9.1 repairs upstream feature materialization defects found by Stage 8.9: flash/HE utility usage, score before round, and explicit utility endpoint capability metadata. It does not relax quality thresholds, train models, produce tactical conclusions, change map mappings, build dashboards, or export to BigQuery.
 - Stage 8.10 reads the repaired multi-map Gold outputs and writes only analysis outputs under `data/gold/analysis/multi_map_tactical_eda/`, plus a report and notebook. It does not modify core Gold, map registries, feature contracts, quality thresholds, model artifacts, dashboards, or BigQuery exports.
-- Stage 8.10.1 reads Stage 8.10 outputs and writes only hardening outputs under `data/gold/analysis/tactical_finding_hardening/`, plus a report and notebook. It consolidates redundant raw candidates into tactical concepts, applies exposure/demo/opponent caveats, fixes direction text, and does not perform model training or feature selection.
-- Stage 8.11 reads the repaired Gold side datasets and hardened findings as context only. It builds a scoped Inferno/Vitality/T-side A/B modeling view, applies leakage and horizon audits, trains a fixed regularized logistic model with leave-one-series-out validation, and writes only `data/gold/modeling/inferno_ab_exploratory/`, `docs/inferno_ab_exploratory_baseline.md`, and `notebooks/27_inferno_ab_exploratory_baseline.ipynb`. It does not promote a model, tune hyperparameters, apply the Mirage model to Inferno, build dashboards, or export to BigQuery.
+- Stage 8.10.1 reads Stage 8.10 outputs and writes only hardening outputs under `data/gold/analysis/tactical_finding_hardening/`, plus a report and notebook. It consolidates redundant raw candidates into tactical concepts, applies comparison-aware exposure/demo/opponent caveats, fixes direction text, and does not perform model training or feature selection.
+- Stage 8.11 reads the repaired Gold side datasets and hardened findings as context only. It builds a scoped Inferno/Vitality/T-side A/B modeling view, applies fail-closed quality/materialization evidence, leakage and horizon audits, trains a fixed regularized logistic model with leave-one-series-out validation, and writes only `data/gold/modeling/inferno_ab_exploratory/`, `docs/inferno_ab_exploratory_baseline.md`, and `notebooks/27_inferno_ab_exploratory_baseline.ipynb`. It does not promote a model, tune hyperparameters, apply the Mirage model to Inferno, build dashboards, or export to BigQuery.
+- Stage 8.11.1 revalidates Stage 8.10.1 and Stage 8.11 after the shared-helper refactor. It corrects real quality/materialization lineage, blocks missing mandatory evidence, records comparison-aware LODO/exposure sensitivity, adds full OOF probability metrics, writes round-level error rows, and validates that frozen modeling methodology and core Gold remain unchanged.
+- Stage 8.12 requires Stage 8.11.1 `status = passed` before execution. It writes sample-expansion/readiness artifacts under `data/gold/modeling/inferno_sample_expansion/`, plus `docs/inferno_sample_expansion.md` and `notebooks/29_inferno_sample_expansion.ipynb`. It does not scrape HLTV, reprocess Mirage, tune models, search horizons, promote a model, build dashboards, or export to BigQuery.
 
 ## MVP Scope
 
@@ -2298,9 +2302,17 @@ data/gold/modeling/inferno_ab_exploratory/inferno_ab_group_audit.{csv,parquet}
 data/gold/modeling/inferno_ab_exploratory/inferno_ab_feature_leakage_audit.{csv,parquet}
 data/gold/modeling/inferno_ab_exploratory/inferno_ab_horizon_audit.{csv,parquet}
 data/gold/modeling/inferno_ab_exploratory/inferno_ab_feature_set_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_feature_evidence_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_modeling_preconditions.{csv,parquet}
 data/gold/modeling/inferno_ab_exploratory/inferno_ab_oof_predictions.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_fold_metrics.{csv,parquet}
 data/gold/modeling/inferno_ab_exploratory/inferno_ab_oof_metrics.{csv,parquet}
 data/gold/modeling/inferno_ab_exploratory/inferno_ab_null_summary.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_error_analysis.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_error_summary.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_integrity_revalidation.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_frozen_experiment_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/modeling_integrity_refactor_regression_audit.{csv,parquet}
 data/gold/modeling/inferno_ab_exploratory/inferno_ab_exploratory_model_audit.{csv,parquet}
 docs/inferno_ab_exploratory_baseline.md
 notebooks/27_inferno_ab_exploratory_baseline.ipynb
@@ -2319,6 +2331,11 @@ Current Stage 8.11 snapshot:
 | Primary predictors | 8 |
 | OOF macro F1 | 0.472 |
 | OOF balanced accuracy | 0.472 |
+| OOF MCC | -0.055 |
+| OOF ROC AUC | 0.487 |
+| OOF Brier score | 0.261 |
+| OOF log loss | 0.715 |
+| OOF confusion matrix | A->A 11, A->B 11, B->A 10, B->B 8 |
 | Recall A / B | 0.500 / 0.444 |
 | Most-frequent dummy macro F1 | 0.355 |
 | Stratified dummy macro F1 | 0.437 |
@@ -2331,6 +2348,129 @@ Current Stage 8.11 snapshot:
 | ready_for_stage_8_12 | true |
 
 Interpretation: Stage 8.11 does not find reproducible early-round A/B signal in the current 40-round Inferno sample. The observed OOF macro F1 is below the null median and only slightly above the stratified dummy baseline, so this is evidence for sample expansion or readiness work rather than model promotion.
+
+## Stage 8.11.1 -- Modeling Integrity & Refactor Regression Gate
+
+Stage 8.11.1 is an integrity/regression gate after the shared-helper refactor. It does not improve the model, tune hyperparameters, change the primary horizon, change the feature set definition, or promote a model. It keeps the Stage 8.11 experiment frozen and verifies that modeling inputs are approved by real upstream evidence.
+
+What changed:
+
+- `build_map_ab_dataset` now reads real Stage 8.9 quality artifacts: `map_feature_quality_profile`, `map_feature_missingness`, `map_feature_degeneracy`, and `map_feature_quality_audit`.
+- materialization evidence now comes from real materialization outputs, including `feature_materialization_capabilities`, `feature_materialization_repair_final_audit`, and feature-level `inferno_feature_materialization`.
+- missing mandatory quality/materialization artifacts fail closed instead of silently approving features.
+- candidate features missing row-level evidence become `unknown_not_approved` and cannot enter the model.
+- Stage 8.10.1 LODO and fully-exposed sensitivity now dispatch by comparison type: `cross_map`, `<map_id>_A_vs_B`, `<map_id>_planted_vs_no_plant`, and `cross_map_site_choice_distribution`.
+- unknown comparison types no longer fall back to cross-map behavior.
+- OOF and fold metrics now include F1_A, F1_B, MCC, ROC AUC when defined, Brier score, log loss, and confusion matrix counts.
+- `inferno_ab_error_analysis` is now one row per OOF error; the aggregate view lives in `inferno_ab_error_summary`.
+- shared CSV reading has explicit default and string-preserving policies.
+
+Stage 8.11.1 outputs:
+
+```text
+data/gold/analysis/tactical_finding_hardening/tactical_finding_sensitivity_revalidation.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_feature_evidence_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_modeling_preconditions.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_integrity_revalidation.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/inferno_ab_frozen_experiment_audit.{csv,parquet}
+data/gold/modeling/inferno_ab_exploratory/modeling_integrity_refactor_regression_audit.{csv,parquet}
+docs/modeling_integrity_refactor_regression.md
+```
+
+Current Stage 8.11.1 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Candidate model features audited | 11 |
+| Features approved for modeling | 8 |
+| Unknown approved features | 0 |
+| Modeling precondition failures | 0 |
+| Round-level OOF errors | 21 |
+| Demo-fragile findings after dispatcher fix | 9 |
+| Fully-exposed reversals after dispatcher fix | 661 |
+| Hardened ranked findings after dispatcher fix | 9 |
+| Frozen methodology preserved | true |
+| Core Gold unchanged | true |
+| Stage 8.11 signal status | `no_signal` |
+| Stage 8.11.1 status | `passed` |
+
+## Stage 8.12 -- Inferno Sample Expansion & Modeling Readiness
+
+Stage 8.12 answers whether the current Inferno/Vitality/T-side A/B sample is large and independent enough for a more reliable baseline re-evaluation. It is a readiness and intake-audit stage, not a model-improvement stage.
+
+Run:
+
+```bash
+python -m src.modeling.inferno_sample_expansion --config configs/project.yaml --expansion-config configs/modeling/inferno_sample_expansion.yaml --force
+```
+
+Optional:
+
+```bash
+python -m src.modeling.inferno_sample_expansion --config configs/project.yaml --expansion-config configs/modeling/inferno_sample_expansion.yaml --dry-run
+python -m src.modeling.inferno_sample_expansion --config configs/project.yaml --expansion-config configs/modeling/inferno_sample_expansion.yaml --force --rerun-frozen-baseline
+```
+
+Current Stage 8.12 outputs:
+
+```text
+data/gold/modeling/inferno_sample_expansion/inferno_sample_inventory.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_sample_summary.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_sample_gap_analysis.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_sample_expansion_priority.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_demo_dedup_audit.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_expansion_lineage.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_expanded_label_quality.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_class_coverage.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_group_coverage.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_modeling_readiness_scorecard.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_expansion_mirage_preservation_audit.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_existing_scope_preservation.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_opponent_coverage.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_sample_concentration_audit.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_frozen_baseline_sample_comparison.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_sample_learning_curve.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_temporal_holdout_audit.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_next_data_targets.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_sample_expansion_read_only_audit.{csv,parquet}
+data/gold/modeling/inferno_sample_expansion/inferno_sample_expansion_audit.{csv,parquet}
+docs/inferno_sample_expansion.md
+notebooks/29_inferno_sample_expansion.ipynb
+```
+
+Current Stage 8.12 snapshot:
+
+| Metric | Value |
+| --- | ---: |
+| Inferno demos before / after | 5 / 5 |
+| Independent series before / after | 5 / 5 |
+| Opponents before / after | 4 / 4 |
+| New demos added | 0 |
+| Planted T-side model rows | 40 |
+| A / B labels | 22 / 18 |
+| Minority class/share | B / 0.45 |
+| Model groups | 5 |
+| Frozen baseline rerun | false |
+| Macro F1 before / after | 0.472 / 0.472 |
+| Balanced accuracy before / after | 0.472 / 0.472 |
+| Null percentile before / after | 0.470 / 0.470 |
+| Signal status | `no_signal` |
+| Data readiness | `expanded_but_limited` |
+| Modeling sample ready | false |
+| Recommended next action | `continue_sample_expansion` |
+| Stage status | `passed` |
+
+Remaining configured gaps:
+
+| Gap | Current | Target | Needed |
+| --- | ---: | ---: | ---: |
+| Independent series | 5 | 8 | 3 |
+| Valid LOGO groups | 5 | 8 | 3 |
+| High-confidence planted T rounds | 40 | 80 | 40 |
+| B planted rounds | 18 | 30 | 12 |
+| A planted rounds | 22 | 30 | 8 |
+| Feature-eligible demos | 5 | 10 | 5 |
+| Opponents | 4 | 5 | 1 |
 
 Strict exclusions:
 

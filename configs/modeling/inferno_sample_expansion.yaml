@@ -1,0 +1,28 @@
+sample_expansion:
+  version: v1
+  target_map: Inferno
+  target_team: Vitality
+
+readiness:
+  minimum_demos: 10
+  minimum_series: 8
+  minimum_planted_t_rounds: 80
+  minimum_class_count: 30
+  minimum_opponents: 5
+  minimum_valid_logo_groups: 8
+
+balance:
+  minimum_minority_share: 0.25
+
+quality:
+  require_high_confidence_labels: true
+  require_feature_quality_gate: true
+  require_materialization_gate: true
+
+frozen_experiment:
+  config: configs/modeling/inferno_ab_exploratory.yaml
+
+notes:
+  - These thresholds are modeling-readiness heuristics, not universal statistical rules.
+  - Independent series, demos, A/B coverage, time span, and opponent diversity matter more than raw round count.
+  - Do not mutate thresholds after observing results only to declare readiness.

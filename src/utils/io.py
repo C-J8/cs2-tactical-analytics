@@ -27,13 +27,23 @@ def read_optional_table(path: Path) -> pd.DataFrame:
     return read_table(path)
 
 
-def read_table_pair(path_without_suffix: Path) -> pd.DataFrame:
+def read_table_pair(
+    path_without_suffix: Path,
+    *,
+    csv_dtype: str | None = None,
+    keep_default_na: bool = True,
+    csv_policy: str = "default",
+) -> pd.DataFrame:
     parquet_path = path_without_suffix.with_suffix(".parquet")
     csv_path = path_without_suffix.with_suffix(".csv")
     if parquet_path.exists():
         return pd.read_parquet(parquet_path)
     if csv_path.exists():
-        return pd.read_csv(csv_path)
+        if csv_policy == "default":
+            return pd.read_csv(csv_path, dtype=csv_dtype, keep_default_na=keep_default_na)
+        if csv_policy == "string_preserving":
+            return pd.read_csv(csv_path, dtype="string", keep_default_na=False)
+        raise ValueError(f"Unsupported CSV policy: {csv_policy}")
     raise FileNotFoundError(f"Table not found: {parquet_path} or {csv_path}")
 
 
