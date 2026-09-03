@@ -145,13 +145,34 @@ HLTV has no official public API. Scraping can be blocked or throttled, so `manua
 
 ## Setup
 
-Use Python 3.11+.
+Use Python 3.11 or 3.12. The project is installable from `pyproject.toml`; the
+committed lock files are the reproducible dependency source for development and
+deployment.
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+python -m pip install -r requirements-dev.lock
+python -m pip install --no-deps -e .
 ```
+
+To refresh the lock files after an intentional dependency change:
+
+```bash
+python -m piptools compile pyproject.toml --strip-extras --output-file requirements.lock
+python -m piptools compile pyproject.toml --strip-extras --extra dev --output-file requirements-dev.lock
+```
+
+## Automation and Airflow
+
+Pull requests and pushes to `main` run Ruff and the complete test suite on
+Python 3.11 and 3.12. CI also builds the Airflow image and checks all DAG imports.
+
+Airflow orchestration is available for local demo ingestion, scoped Gold
+materialization, and the frozen Inferno analysis/modeling workflow. All DAGs are
+manual by default so the existing offline-first contract is preserved. See
+[`docs/airflow.md`](docs/airflow.md) for architecture, startup, and operational
+rules.
 
 ## Configs
 

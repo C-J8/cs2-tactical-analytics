@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.pytest_cache
+.ruff_cache
+__pycache__
+**/__pycache__
+*.pyc
+.env*
+notebooks
+data/raw/demo_archives
+data/raw/demos
+data/bronze
+data/silver
+data/gold
+airflow/logs
