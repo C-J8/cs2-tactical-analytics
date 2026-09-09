@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 import polars as pl
-import yaml
 
 from src.config.schemas import load_project_config
 from src.maps.identity import resolve_map_identity
 from src.storage.scoped_gold import GOLD_DATASET_SPECS, make_gold_scope, map_id_series, write_scoped_dataset
+from src.teams.registry import load_team_registry
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 from src.utils.text import clean_string
@@ -85,7 +85,11 @@ def run_round_state_pipeline(
     rounds = pd.read_parquet(silver_dir / "rounds.parquet")
     bomb = pd.read_parquet(silver_dir / "bomb.parquet") if (silver_dir / "bomb.parquet").exists() else pd.DataFrame()
     ticks_path = silver_dir / "ticks.parquet"
-    roster_path = project.player_rosters_path if project.player_rosters_path.is_absolute() else project_root / project.player_rosters_path
+    roster_path = (
+        project.team_registry_path
+        if project.team_registry_path.is_absolute()
+        else project_root / project.team_registry_path
+    )
     team_rosters = load_player_rosters(roster_path)
 
     state = build_round_state(
@@ -387,24 +391,7 @@ def build_round_state_audit(state: pd.DataFrame) -> pd.DataFrame:
 def load_player_rosters(path: Path) -> TeamRosters:
     if not path.exists():
         return default_team_rosters()
-    with path.open("r", encoding="utf-8") as file:
-        content = yaml.safe_load(file) or {}
-    rosters: TeamRosters = {}
-    for team in content.get("teams", []):
-        team_name = clean_string(team.get("team_name"))
-        if not team_name:
-            continue
-        players: set[str] = set()
-        for player in team.get("players", []):
-            if isinstance(player, str):
-                players.add(normalize_player_name(player))
-                continue
-            player_name = player.get("player_name") or player.get("name")
-            players.add(normalize_player_name(player_name))
-            for alias in player.get("aliases", []):
-                players.add(normalize_player_name(alias))
-        rosters[team_name] = {player for player in players if player}
-    return rosters or default_team_rosters()
+    return load_team_registry(path).legacy_rosters() or default_team_rosters()
 
 
 def default_team_rosters() -> TeamRosters:

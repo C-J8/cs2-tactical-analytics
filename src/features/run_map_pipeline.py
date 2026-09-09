@@ -5,14 +5,29 @@ from pathlib import Path
 from typing import Any
 
 from src.config.schemas import load_project_config
-from src.features.build_round_features import run_feature_pipeline
+from src.features.build_round_features import run_feature_pipeline as run_legacy_round_feature_pipeline
+from src.features.build_role_features import run_role_feature_pipeline
+from src.features.demo_timing import run_demo_timing_pipeline
 from src.features.round_state import run_round_state_pipeline
 from src.features.side_datasets import run_side_dataset_pipeline
 from src.maps.identity import resolve_map_identity
 from src.maps.registry import load_yaml, normalize_id
+from src.teams.build_team_dictionary import run_team_dictionary_pipeline
 from src.utils.io import read_catalog
 from src.utils.logging import configure_logging
 from src.validation.multi_map_gold_gate import capture_scope_fingerprints, run_multi_map_gold_gate
+
+
+PIPELINE_ID = "scoped-map-features"
+PIPELINE_STEPS = (
+    "team_dictionary",
+    "demo_timing",
+    "legacy_round_features",
+    "round_state",
+    "side_datasets",
+    "role_features",
+    "multi_map_gold_gate",
+)
 
 
 def run_map_pipeline(
@@ -44,7 +59,8 @@ def run_map_pipeline(
                 "target_team": target_team,
                 "dry_run": True,
                 "status": "ok",
-                "steps": "build_round_features|round_state|side_datasets|multi_map_gold_gate",
+                "pipeline_id": PIPELINE_ID,
+                "steps": "|".join(PIPELINE_STEPS),
             },
             {},
         )
@@ -52,7 +68,9 @@ def run_map_pipeline(
     mirage_before = capture_scope_fingerprints(gold_dir, map_name="Mirage", target_team=target_team, registry_path=effective_registry_path)
     validation_dir.mkdir(parents=True, exist_ok=True)
     mirage_before.to_parquet(validation_dir / "mirage_gold_preservation_before.parquet", index=False)
-    _, feature_outputs, feature_summary = run_feature_pipeline(
+    _, team_outputs = run_team_dictionary_pipeline(config_path, force=force, dry_run=False)
+    _, _, timing_outputs = run_demo_timing_pipeline(config_path, force=force, dry_run=False)
+    _, feature_outputs, feature_summary = run_legacy_round_feature_pipeline(
         config_path,
         force=force,
         dry_run=False,
@@ -76,6 +94,14 @@ def run_map_pipeline(
         target_team=target_team,
         map_registry_path=effective_registry_path,
     )
+    _, canonical_outputs, canonical_summary = run_role_feature_pipeline(
+        config_path,
+        force=force,
+        dry_run=False,
+        target_map=identity.display_name,
+        target_team=target_team,
+        map_registry_path=effective_registry_path,
+    )
     _, gate_outputs, gate_summary = run_multi_map_gold_gate(
         config_path,
         target_map=identity.display_name,
@@ -86,14 +112,24 @@ def run_map_pipeline(
         mirage_before=mirage_before,
     )
 
-    outputs = {**feature_outputs, **state_outputs, **side_outputs, **gate_outputs}
+    outputs = {
+        **team_outputs,
+        **timing_outputs,
+        **feature_outputs,
+        **state_outputs,
+        **side_outputs,
+        **canonical_outputs,
+        **gate_outputs,
+    }
     summary = {
         "map_id": identity.map_id,
         "target_team": target_team,
+        "pipeline_id": PIPELINE_ID,
         "round_features": feature_summary.get("rounds_generated", 0),
         "round_state_rows": state_summary.get("total_rounds", 0),
         "t_side_all": side_summary.get("t_side_all", 0),
         "ct_side": side_summary.get("ct_side", 0),
+        "canonical_feature_columns": canonical_summary.get("feature_columns", 0),
         "gate_status": gate_summary.get("overall_status"),
         "status": "ok" if gate_summary.get("overall_status") == "passed" else "warning",
     }

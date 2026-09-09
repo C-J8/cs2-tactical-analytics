@@ -46,7 +46,7 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 - 1 Stage 8.11 Inferno A/B exploratory baseline with 40 high-confidence Inferno planted T-side rounds, 22 A / 18 B labels, 5 leave-one-series-out groups, 8 leakage-safe predictors at 35 seconds, OOF macro F1 `0.472`, balanced accuracy `0.472`, MCC `-0.055`, ROC AUC `0.487`, Brier score `0.261`, log loss `0.715`, null percentile `0.470`, exploratory signal status `no_signal`, `model_status = exploratory_only`, and `ready_for_stage_8_12 = true`;
 - 1 Stage 8.11.1 modeling integrity gate with real Stage 8.9/8.9.1 lineage, fail-closed feature evidence, 11 candidate features audited, 8 approved model predictors, 21 round-level OOF errors, frozen methodology preserved, core Gold unchanged, `status = passed`, and `ready_for_stage_8_12 = true`;
 - 1 Stage 8.12 Inferno sample-expansion readiness gate with 5 Inferno demos, 5 independent series, 4 inferred opponents, 40 planted T-side model rows, 22 A / 18 B labels, 5 model groups, 0 new demos added by the stage, `data_readiness = expanded_but_limited`, `modeling_sample_ready = false`, frozen baseline unchanged at macro F1 `0.472`, balanced accuracy `0.472`, MCC `-0.055`, null percentile `0.470`, `signal_status = no_signal`, and `recommended_next_action = continue_sample_expansion`;
-- 290 tests passing and `ruff check .` passing.
+- 298 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -2503,3 +2503,7 @@ Strict exclusions:
 - no dashboard, Streamlit, BigQuery, deployment, or promoted model.
 
 The next stage should be chosen from this evidence. Given `exploratory_signal_status = no_signal`, the most natural next step is sample expansion and modeling-readiness work rather than trying to tune this model into a better headline metric.
+
+# Mirage: consolidação técnica
+
+A separação entre features de ataque/defesa, contrato de 64 ticks/s, registro de equipes, assets completos do mapa e validação agrupada do candidato está documentada em [docs/mirage_consolidation_technical.md](docs/mirage_consolidation_technical.md).

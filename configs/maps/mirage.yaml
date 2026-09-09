@@ -10,6 +10,28 @@ coordinate_system:
   axis_z: z
   notes: Current pipeline uses Awpy/place-name region aliases rather than custom coordinate
     boxes.
+assets:
+  provider: awpy-data
+  client_version: "2000899"
+  steam_build_id: "25000182"
+  release_url: https://github.com/pnxenopoulos/awpy-data/releases/tag/2000899
+  source_url_template: https://github.com/pnxenopoulos/awpy-data/releases/download/{client_version}/{resource}.zip
+  metadata_url_template: https://github.com/pnxenopoulos/awpy-data/releases/download/{client_version}/{filename}
+  project_local_root: data/reference/maps/awpy/2000899
+  resources:
+    - images
+    - navs
+    - geometry
+  metadata_files:
+    - manifest.json
+    - map_data.json
+  selection: de_mirage_only
+  manifest: data/reference/maps/awpy/2000899/mirage_asset_manifest.csv
+  status: version_pinned_external_reference
+  notes: >-
+    Radar, navigation mesh and collision geometry are supplemental assets. The
+    current v1 region schema remains place-name based until these assets are
+    explicitly promoted through a new region_schema_version.
 physical_regions:
 - region_id: t_spawn
   display_name: T Spawn

@@ -94,6 +94,9 @@ class ProjectConfig(BaseModel):
     parse_manifest_dir: Path = Path("data/bronze/parse_manifest")
     parser_backend: Literal["awpy"] = "awpy"
     player_rosters_path: Path = Path("configs/player_rosters.yaml")
+    team_registry_path: Path = Path("configs/player_rosters.yaml")
+    timing_config_path: Path = Path("configs/timing.yaml")
+    role_feature_output_dir: Path = Path("data/gold/features/role_aware")
     feature_windows: FeatureWindowsConfig = Field(default_factory=FeatureWindowsConfig)
     parse_player_props: list[str] = Field(
         default_factory=lambda: [
