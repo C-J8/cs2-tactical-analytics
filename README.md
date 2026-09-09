@@ -2507,3 +2507,13 @@ The next stage should be chosen from this evidence. Given `exploratory_signal_st
 # Mirage: consolidação técnica
 
 A separação entre features de ataque/defesa, contrato de 64 ticks/s, registro de equipes, assets completos do mapa e validação agrupada do candidato está documentada em [docs/mirage_consolidation_technical.md](docs/mirage_consolidation_technical.md).
+
+O critério operacional para declarar o Mirage consolidado é executável e fail-closed:
+
+```bash
+python -m src.validation.mirage_consolidation_gate --config configs/project.yaml --force
+```
+
+Enquanto houver bloqueios, o comando ainda grava o relatório, mas termina com código diferente de zero. Para apenas atualizar o diagnóstico local sem falhar a execução, acrescente `--report-only`.
+
+O contrato fica em `configs/quality/mirage_consolidation.yaml`, as aprovações/evidências em `configs/quality/mirage_consolidation_evidence.yaml` e o status gerado em [docs/mirage_consolidation_status.md](docs/mirage_consolidation_status.md).

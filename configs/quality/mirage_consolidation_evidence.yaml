@@ -1,0 +1,26 @@
+evidence_version: v1
+
+manual_region_review:
+  status: pending
+  reviewer: null
+  reviewed_at: null
+  reviewed_regions: []
+  notes: Radar/nav spot checks have not yet been signed off.
+
+clean_room_rebuild:
+  status: pending
+  run_id: null
+  completed_at: null
+  notes: A full archive-to-Gold rebuild must be executed in an empty derived-data root.
+
+idempotent_rerun:
+  status: pending
+  run_id: null
+  completed_at: null
+  notes: A second identical run must produce no duplicate keys or unexpected content changes.
+
+retention_recovery:
+  status: pending
+  run_id: null
+  completed_at: null
+  notes: One extracted DEM must be removed and recovered from its retained archive before retention is enabled.

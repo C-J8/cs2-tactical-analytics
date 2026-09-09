@@ -1,0 +1,42 @@
+contract_id: mirage_consolidation
+contract_version: v1
+target_map: Mirage
+target_team: Vitality
+
+thresholds:
+  minimum_valid_full_map_demos: 15
+  maximum_unknown_place_share: 0.0
+  minimum_grouped_series: 10
+
+required_semantics:
+  - mid_control
+  - a_pressure
+  - b_pressure
+  - ct_space
+
+paths:
+  map_registry: configs/maps/map_registry.yaml
+  parse_quality: data/bronze/parse_quality/parse_quality
+  demo_manifest: data/bronze/dem_files_manifest/dem_files_manifest
+  timing_audit: data/gold/features/demo_timing/demo_timing_audit
+  role_feature_audit: data/gold/features/role_aware/role_feature_audit
+  grouped_validation_audit: data/gold/modeling/mirage_ab_grouped_validation/grouped_validation_audit
+  grouped_model_contract: data/gold/modeling/mirage_ab_grouped_validation/grouped_validation_model_contract
+  regression_audit: data/gold/validation/mirage_regression_gate/mirage_regression_audit
+  team_dictionary_audit: data/gold/reference/team_dictionary/team_dictionary_audit
+  ingestion_dag: dags/cs2_demo_ingestion.py
+  storage_contract: configs/storage.yaml
+  silver_ticks_monolith: data/silver/parsed_demos/ticks.parquet
+  silver_ticks_partition_glob: data/silver/parsed_demos/table=ticks/**/*.parquet
+
+orchestration:
+  required_download_module: src.ingestion.download_demos
+
+output:
+  directory: data/gold/validation/mirage_consolidation
+  report: docs/mirage_consolidation_status.md
+
+notes: >-
+  The thresholds define an MVP operational gate, not robust or external model
+  validation. Every blocking criterion must pass before Mirage is declared
+  consolidated and used as the reference for new teams or maps.
