@@ -1,5 +1,15 @@
 evidence_version: v1
 
+physical_demo_inventory_reconciliation:
+  status: passed
+  reconciled_at: "2026-09-09T15:11:08-03:00"
+  classification: exact_hash_duplicates
+  duplicate_files: 4
+  duplicate_bytes: 2283492475
+  action: moved_to_quarantine
+  quarantine_path: data/raw/quarantine/duplicate_demos/hltv_2389666
+  report: docs/mirage_demo_inventory_reconciliation.md
+
 manual_region_review:
   status: pending
   reviewer: null
