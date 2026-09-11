@@ -9,7 +9,7 @@ def test_load_configs() -> None:
     maps = load_maps_config(Path("configs/maps.yaml"))
 
     assert project.project_name == "cs2-tactical-analytics"
-    assert project.mode == "manual"
+    assert project.mode == "hybrid"
     assert teams.teams[0].team_name == "Vitality"
     assert maps.maps[0].map_name == "Mirage"
 

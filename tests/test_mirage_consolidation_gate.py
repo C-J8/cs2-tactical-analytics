@@ -5,6 +5,7 @@ import pandas as pd
 from src.validation.mirage_consolidation_gate import (
     ConsolidationContext,
     check_declared_evidence,
+    check_downloader_orchestration,
     check_inventory_reconciliation,
     summarize_checks,
 )
@@ -19,11 +20,17 @@ class RegistryStub:
     display_name = "Mirage"
 
 
-def context(tmp_path: Path, *, evidence: dict | None = None) -> ConsolidationContext:
+def context(
+    tmp_path: Path,
+    *,
+    evidence: dict | None = None,
+    contract: dict | None = None,
+) -> ConsolidationContext:
     return ConsolidationContext(
         project_root=tmp_path,
         project=ProjectStub(),  # type: ignore[arg-type]
-        contract={"contract_id": "mirage_consolidation", "contract_version": "v1", "paths": {"demo_manifest": "manifest"}},
+        contract=contract
+        or {"contract_id": "mirage_consolidation", "contract_version": "v1", "paths": {"demo_manifest": "manifest"}},
         evidence=evidence or {},
         map_id="mirage",
         map_name="Mirage",
@@ -73,6 +80,30 @@ def test_manual_evidence_cannot_pass_without_review_details() -> None:
 
     assert row["status"] == "failed"
     assert '"reviewed_regions"' in row["observed"]
+
+
+def test_downloader_orchestration_requires_archive_only_stage_order(tmp_path: Path) -> None:
+    dag_path = tmp_path / "dag.py"
+    downloader_path = tmp_path / "download.py"
+    dag_path.write_text(
+        'module = "src.ingestion.download_demos"\nargs = ["--require-ready"]\n'
+        "build_catalog >> download_archives >> scan_archives\n",
+        encoding="utf-8",
+    )
+    downloader_path.write_text('field = "archive_ready_for_scan"\n', encoding="utf-8")
+    ctx = context(
+        tmp_path,
+        contract={
+            "contract_id": "mirage_consolidation",
+            "contract_version": "v1",
+            "paths": {"ingestion_dag": "dag.py", "downloader_module": "download.py"},
+            "orchestration": {"required_download_module": "src.ingestion.download_demos"},
+        },
+    )
+
+    row = check_downloader_orchestration(ctx)
+
+    assert row["status"] == "passed"
 
 
 def test_summary_requires_every_blocking_check_to_pass(tmp_path: Path) -> None:

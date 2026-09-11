@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -95,33 +96,43 @@ class ArchiveExtractor:
         if not seven_zip:
             return ExtractionResult("unsupported_archive", [], "RAR extraction requires 7z/7za on PATH")
 
-        before = {path.resolve() for path in output_dir.rglob("*.dem")}
-        command = [seven_zip, "x", "-y" if force else "-aos", f"-o{output_dir}", str(archive_path)]
-        try:
-            completed = subprocess.run(command, capture_output=True, text=True, check=False)
-        except OSError as exc:
-            return ExtractionResult("failed", [], str(exc))
-        if completed.returncode != 0:
-            return ExtractionResult("failed", [], completed.stderr.strip() or completed.stdout.strip())
+        with tempfile.TemporaryDirectory(prefix=f".{safe_slug(base_name)}-", dir=output_dir.parent) as temp_dir:
+            extraction_dir = Path(temp_dir)
+            command = [seven_zip, "x", "-y", f"-o{extraction_dir}", str(archive_path)]
+            try:
+                completed = subprocess.run(command, capture_output=True, text=True, check=False)
+            except OSError as exc:
+                return ExtractionResult("failed", [], str(exc))
+            if completed.returncode != 0:
+                return ExtractionResult("failed", [], completed.stderr.strip() or completed.stdout.strip())
 
-        after_paths = sorted(
-            [path for path in output_dir.rglob("*.dem") if path.resolve() not in before or force],
-            key=lambda path: path.name.lower(),
-        )
-        demos = []
-        for path in after_paths:
-            original_file_name = path.name
-            target = output_dir / f"{base_name}_{safe_slug(path.stem)}.dem"
-            if path != target:
+            extracted_paths = sorted(extraction_dir.rglob("*.dem"), key=lambda path: path.name.lower())
+            if not extracted_paths:
+                return ExtractionResult("failed", [], "No .dem files found after RAR extraction")
+
+            plans = [
+                (path, output_dir / f"{base_name}_{safe_slug(path.stem)}.dem")
+                for path in extracted_paths
+            ]
+            for source, target in plans:
+                if target.exists() and not force and sha256_file(source) != sha256_file(target):
+                    return ExtractionResult(
+                        "failed",
+                        [],
+                        f"Existing DEM differs from archive member: {target}",
+                    )
+
+            demos = []
+            for source, target in plans:
+                original_file_name = source.name
                 if target.exists() and not force:
                     demos.append(self._demo_result("skipped_existing", target, original_file_name=original_file_name))
                     continue
-                path.replace(target)
-            demos.append(self._demo_result("extracted", target, original_file_name=original_file_name))
+                shutil.move(str(source), target)
+                demos.append(self._demo_result("extracted", target, original_file_name=original_file_name))
 
-        if not demos:
-            return ExtractionResult("failed", [], "No .dem files found after RAR extraction")
-        return ExtractionResult("extracted", demos)
+        status = "skipped_existing" if all(demo.status == "skipped_existing" for demo in demos) else "extracted"
+        return ExtractionResult(status, demos)
 
     def _demo_result(self, status: str, path: Path, *, original_file_name: str | None = None) -> ExtractedDemo:
         return ExtractedDemo(

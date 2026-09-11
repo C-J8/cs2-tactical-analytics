@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.ingestion.download_demos import run_download_pipeline
+from src.ingestion.demo_downloader import DownloadResult
+from src.ingestion.download_demos import run_download_pipeline, select_eligible_rows
 from src.utils.io import read_catalog
 
 
@@ -81,7 +82,6 @@ demo_manifest_dir: {(tmp_path / 'data/bronze/demo_manifest').as_posix()}
 download_timeout_seconds: 10
 download_rate_limit_seconds: 0
 max_downloads_per_run: null
-extract_archives: true
 force_download: false
 """.strip(),
         encoding="utf-8",
@@ -152,11 +152,37 @@ def test_local_only_does_not_create_http_clients(monkeypatch, tmp_path: Path) ->
     monkeypatch.setattr("src.ingestion.download_demos.DemoDownloader", fail_http_client)
     monkeypatch.setattr("src.ingestion.download_demos.HltvClient", fail_http_client)
 
-    manifest, outputs, summary = run_download_pipeline(config_path, local_only=True, no_extract=True)
+    manifest, outputs, summary = run_download_pipeline(config_path, local_only=True)
 
     assert outputs["csv"].exists()
     assert manifest.loc[0, "download_status"] == "local_existing"
+    assert bool(manifest.loc[0, "archive_ready_for_scan"])
     assert summary["total_local_existing"] == 1
+    assert summary["total_ready_for_scanner"] == 1
+
+
+def test_normal_mode_reuses_local_archive_without_http(monkeypatch, tmp_path: Path) -> None:
+    catalog_dir = tmp_path / "catalog"
+    catalog_dir.mkdir()
+    _catalog_frame().head(1).to_parquet(catalog_dir / "matches_catalog.parquet", index=False)
+    config_path = _write_config(tmp_path, catalog_dir)
+    archive_dir = tmp_path / "data/raw/demo_archives/Vitality/Mirage"
+    archive_dir.mkdir(parents=True)
+    archive_path = archive_dir / "hltv_42_mirage_map1.rar"
+    archive_path.write_bytes(b"fake rar")
+
+    def fail_http_client(*args, **kwargs):
+        raise AssertionError("Existing local archive must be reused before creating HTTP clients")
+
+    monkeypatch.setattr("src.ingestion.download_demos.DemoDownloader", fail_http_client)
+    monkeypatch.setattr("src.ingestion.download_demos.HltvClient", fail_http_client)
+
+    manifest, _, summary = run_download_pipeline(config_path)
+
+    assert manifest.loc[0, "archive_path"] == str(archive_path)
+    assert manifest.loc[0, "download_status"] == "local_existing"
+    assert bool(manifest.loc[0, "archive_ready_for_scan"])
+    assert summary["total_ready_for_scanner"] == 1
 
 
 def test_local_only_missing_archive_generates_manifest(tmp_path: Path) -> None:
@@ -169,9 +195,13 @@ def test_local_only_missing_archive_generates_manifest(tmp_path: Path) -> None:
 
     assert outputs["csv"].exists()
     assert manifest.loc[0, "download_status"] == "missing_local_archive"
-    assert manifest.loc[0, "extract_status"] == "not_needed"
+    assert not bool(manifest.loc[0, "archive_ready_for_scan"])
     assert manifest.loc[0, "status"] == "warning"
     assert summary["total_missing_local_archive"] == 1
+    assert summary["total_manual_action_required"] == 1
+    assert bool(manifest.loc[0, "manual_action_required"])
+    assert manifest.loc[0, "manual_download_page"] == "https://www.hltv.org/matches/42/example"
+    assert "--match-id 42" in manifest.loc[0, "manual_registration_command"]
     assert "hltv_42_mirage_map1" in manifest.loc[0, "error_message"]
 
 
@@ -183,7 +213,7 @@ def test_archive_path_copies_and_registers_local_file(tmp_path: Path) -> None:
     source_archive = tmp_path / "browser-download.rar"
     source_archive.write_bytes(b"fake rar")
 
-    manifest, outputs, summary = run_download_pipeline(config_path, archive_path=source_archive, no_extract=True)
+    manifest, outputs, summary = run_download_pipeline(config_path, archive_path=source_archive)
     target_archive = tmp_path / "data/raw/demo_archives/Vitality/Mirage/hltv_42_mirage_map1.rar"
 
     assert outputs["parquet"].exists()
@@ -194,7 +224,7 @@ def test_archive_path_copies_and_registers_local_file(tmp_path: Path) -> None:
     assert summary["total_local_registered"] == 1
 
 
-def test_local_zip_with_fake_dem_extracts(tmp_path: Path) -> None:
+def test_local_zip_is_handed_to_scanner_without_extraction(tmp_path: Path) -> None:
     catalog_dir = tmp_path / "catalog"
     catalog_dir.mkdir()
     _catalog_frame().head(1).to_parquet(catalog_dir / "matches_catalog.parquet", index=False)
@@ -209,6 +239,110 @@ def test_local_zip_with_fake_dem_extracts(tmp_path: Path) -> None:
 
     assert outputs["csv"].exists()
     assert manifest.loc[0, "download_status"] == "local_existing"
-    assert manifest.loc[0, "extract_status"] == "extracted"
-    assert Path(manifest.loc[0, "dem_path"]).exists()
-    assert summary["total_extracted"] == 1
+    assert bool(manifest.loc[0, "archive_ready_for_scan"])
+    assert "dem_path" not in manifest.columns
+    assert not (tmp_path / "data/raw/demos").exists()
+    assert summary["total_ready_for_scanner"] == 1
+
+
+def test_series_is_acquired_only_once_when_catalog_has_multiple_maps() -> None:
+    catalog = _catalog_frame().head(1)
+    inferno = catalog.copy()
+    inferno["map_name"] = "Inferno"
+    inferno["map_number"] = 2
+
+    eligible = select_eligible_rows(pd.concat([catalog, inferno], ignore_index=True))
+
+    assert len(eligible) == 1
+    assert eligible.iloc[0]["series_id"] == "hltv_42"
+
+
+def test_archive_path_requires_an_explicit_selector_for_multiple_rows(tmp_path: Path) -> None:
+    catalog_dir = tmp_path / "catalog"
+    catalog_dir.mkdir()
+    _catalog_frame().to_parquet(catalog_dir / "matches_catalog.parquet", index=False)
+    config_path = _write_config(tmp_path, catalog_dir)
+    source_archive = tmp_path / "browser-download.rar"
+    source_archive.write_bytes(b"fake rar")
+
+    try:
+        run_download_pipeline(config_path, archive_path=source_archive)
+    except ValueError as exc:
+        assert "--match-id or --series-id" in str(exc)
+    else:
+        raise AssertionError("Expected ambiguous --archive-path registration to fail")
+
+
+def test_cli_require_ready_fails_after_writing_manual_queue(tmp_path: Path) -> None:
+    catalog_dir = tmp_path / "catalog"
+    catalog_dir.mkdir()
+    _catalog_frame().head(1).to_parquet(catalog_dir / "matches_catalog.parquet", index=False)
+    config_path = _write_config(tmp_path, catalog_dir)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "src.ingestion.download_demos",
+            "--config",
+            str(config_path),
+            "--local-only",
+            "--require-ready",
+        ],
+        cwd=Path.cwd(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert (tmp_path / "data/bronze/demo_manifest/demo_manifest.csv").exists()
+
+
+def test_download_limit_counts_only_new_remote_attempts(monkeypatch, tmp_path: Path) -> None:
+    catalog_dir = tmp_path / "catalog"
+    catalog_dir.mkdir()
+    first = _catalog_frame().head(1)
+    second = first.copy()
+    second[["series_id", "hltv_match_id", "match_url", "demo_link"]] = [
+        "hltv_43",
+        "43",
+        "https://www.hltv.org/matches/43/example",
+        "https://example.test/43.zip",
+    ]
+    third = first.copy()
+    third[["series_id", "hltv_match_id", "match_url", "demo_link"]] = [
+        "hltv_44",
+        "44",
+        "https://www.hltv.org/matches/44/example",
+        "https://example.test/44.zip",
+    ]
+    pd.concat([first, second, third], ignore_index=True).to_parquet(
+        catalog_dir / "matches_catalog.parquet",
+        index=False,
+    )
+    config_path = _write_config(tmp_path, catalog_dir)
+    local_dir = tmp_path / "data/raw/demo_archives/Vitality/Mirage"
+    local_dir.mkdir(parents=True)
+    (local_dir / "hltv_42_mirage_map1.rar").write_bytes(b"existing")
+
+    class FakeDownloader:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def prime_match_page(self, match_url) -> None:
+            pass
+
+        def download(self, url, output_path, *, force, referer):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"downloaded")
+            return DownloadResult("downloaded", output_path, 10, "fake-sha", "now", url)
+
+    monkeypatch.setattr("src.ingestion.download_demos.DemoDownloader", FakeDownloader)
+
+    manifest, _, summary = run_download_pipeline(config_path, limit=1)
+
+    assert list(manifest["hltv_match_id"].astype(str)) == ["42", "43"]
+    assert list(manifest["download_status"]) == ["local_existing", "downloaded"]
+    assert summary["total_processed"] == 2
+    assert summary["total_deferred_by_limit"] == 1

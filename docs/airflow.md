@@ -9,13 +9,13 @@ define dependencies, parameters, retries, and observable execution boundaries.
 The development stack uses Airflow 3.3.1 on Linux containers, PostgreSQL 16 for
 metadata, and `LocalExecutor`. The repository is mounted at
 `/opt/airflow/project`, so the current local Bronze/Silver/Gold storage contract
-is preserved. Runs are deliberately manual because local demos and the manual
-match seed remain the project's source of truth.
+is preserved. DAG scheduling remains disabled by default, while ingestion itself
+uses a hybrid automatic/manual acquisition contract.
 
 The available DAGs are:
 
-- `cs2_demo_ingestion`: catalog, archive scan/extraction, metadata probe,
-  parsing, and parse-quality gate;
+- `cs2_demo_ingestion`: catalog, archive acquisition, archive scan/extraction,
+  metadata probe, parsing, and parse-quality gate;
 - `cs2_gold_materialization`: the existing scoped map pipeline, including the
   multi-map Gold preservation gate;
 - `cs2_inferno_analysis_modeling`: feature quality, materialization repair,
@@ -23,7 +23,31 @@ The available DAGs are:
   readiness.
 
 All DAGs default to `force=false`, allow only one active run, and accept a small
-set of explicit runtime parameters. They do not scrape HLTV automatically.
+set of explicit runtime parameters. Catalog building discovers HLTV matches by
+configured team/date/map when possible and merges them with the manual seed.
+Archive acquisition downloads each series once and reuses local files before
+opening HTTP connections.
+
+The ingestion ownership chain is deliberately linear:
+
+```text
+build_match_catalog
+  -> download_archives        # archive acquisition/registration only
+  -> scan_local_archives      # the only archive extraction owner
+  -> probe_dem_metadata
+  -> parse_demos
+  -> parse_quality
+```
+
+Keeping acquisition and extraction separate prevents the same archive from
+creating DEM copies under two directory conventions.
+
+`download_archives` runs with `--require-ready`. If HLTV blocks a selected
+archive, the task writes an actionable row to `demo_manifest` and fails before
+`scan_local_archives`. The row contains the match page, expected archive stem,
+destination directory, and an exact `--match-id ... --archive-path ...` recovery
+command. After the file is registered manually, retrying the DAG resumes from
+the same canonical pipeline.
 
 ## Start locally
 
@@ -57,8 +81,8 @@ the normal workflow.
   paths and small status summaries only.
 - Keep `max_active_runs=1` while Gold tables are stored on the shared local
   filesystem.
-- Do not enable automatic schedules until ingestion has a stable external event
-  source and the write paths are safe for concurrent runs.
+- Do not enable a time schedule until the HLTV best-effort discovery behavior is
+  monitored in practice; security challenges are expected and are never bypassed.
 - Use object storage or another shared data platform before moving to remote
   workers, Celery, or Kubernetes.
 - Treat Airflow retry as safe only for commands whose scoped writes are

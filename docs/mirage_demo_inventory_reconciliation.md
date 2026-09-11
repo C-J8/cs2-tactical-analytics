@@ -33,4 +33,4 @@ Após a movimentação, o inventário ativo ficou com `55` DEMs físicas e `55` 
 
 O manifesto `demo_manifest` foi produzido pelo downloader antigo, que também extraía arquivos diretamente em `data/raw/demos/<team>/<catalog_map>/`. Depois, `scan_local_archives` extraiu o mesmo arquivo novamente em `data/raw/demos/<team>/<local_archive_id>/` e criou o manifesto canônico `dem_files_manifest`.
 
-A correção estrutural seguinte deve fazer o downloader possuir apenas a aquisição do arquivo compactado e deixar `scan_local_archives` como único responsável pela extração e pelo catálogo de DEMs. Até essa separação ser implementada, executar novamente o downloader com extração habilitada pode recriar as quatro cópias legadas.
+A correção estrutural foi aplicada: `download_demos` possui apenas a aquisição/registro do arquivo compactado, enquanto `scan_local_archives` é o único responsável pela extração e pelo catálogo de DEMs. O DAG executa esses estágios nessa ordem, eliminando o caminho que havia criado as quatro cópias legadas.

@@ -382,18 +382,31 @@ def check_team_provenance(ctx: ConsolidationContext) -> dict[str, Any]:
 
 def check_downloader_orchestration(ctx: ConsolidationContext) -> dict[str, Any]:
     dag_path = resolve_path(ctx.project_root, Path(ctx.contract["paths"]["ingestion_dag"]))
+    downloader_path = resolve_path(ctx.project_root, Path(ctx.contract["paths"]["downloader_module"]))
     required = str(ctx.contract["orchestration"]["required_download_module"])
-    content = dag_path.read_text(encoding="utf-8") if dag_path.exists() else ""
-    passed = required in content
+    dag_content = dag_path.read_text(encoding="utf-8") if dag_path.exists() else ""
+    downloader_content = downloader_path.read_text(encoding="utf-8") if downloader_path.exists() else ""
+    module_referenced = required in dag_content
+    stage_ordered = "build_catalog >> download_archives >> scan_archives" in dag_content
+    acquisition_fail_closed = "--require-ready" in dag_content
+    archive_only = "ArchiveExtractor" not in downloader_content and "archive_ready_for_scan" in downloader_content
+    passed = module_referenced and stage_ordered and acquisition_fail_closed and archive_only
     return check_row(
         "downloader_in_end_to_end_orchestration",
         "orchestration",
-        "The canonical ingestion workflow includes the existing downloader before archive scanning.",
+        "The canonical workflow acquires archives before scanning, and only the scanner extracts DEMs.",
         passed=passed,
-        observed={"dag_exists": dag_path.exists(), "download_module_referenced": passed},
-        expected=f"DAG references {required}",
-        evidence=str(dag_path),
-        remediation="Insert catalog-driven demo acquisition into the canonical DAG/runner.",
+        observed={
+            "dag_exists": dag_path.exists(),
+            "downloader_exists": downloader_path.exists(),
+            "download_module_referenced": module_referenced,
+            "acquisition_before_scan": stage_ordered,
+            "acquisition_fail_closed": acquisition_fail_closed,
+            "downloader_archive_only": archive_only,
+        },
+        expected=f"DAG references {required} with --require-ready before scan; downloader does not extract",
+        evidence=f"{dag_path}; {downloader_path}",
+        remediation="Place fail-closed archive-only acquisition before the single canonical extraction stage.",
     )
 
 
