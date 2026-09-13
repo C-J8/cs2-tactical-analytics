@@ -65,7 +65,7 @@ class FeatureWindowsConfig(BaseModel):
 
 class ProjectConfig(BaseModel):
     project_name: str
-    mode: Literal["manual", "scrape"] = "manual"
+    mode: Literal["manual", "scrape", "hybrid"] = "manual"
     date_start: date
     date_end: date
     target_maps: list[str] = Field(min_length=1)
@@ -75,6 +75,9 @@ class ProjectConfig(BaseModel):
     cache_enabled: bool = True
     manual_seed_path: Path = Path("data/raw/manual/matches_seed.csv")
     hltv_cache_dir: Path = Path("data/raw/hltv_pages")
+    match_discovery_manifest_dir: Path = Path("data/bronze/match_discovery_manifest")
+    discovery_max_pages: int = Field(default=1, ge=1, le=10)
+    discovery_max_matches_per_run: int | None = Field(default=None, ge=1)
     bronze_output_dir: Path = Path("data/bronze/match_catalog_raw")
     silver_output_dir: Path = Path("data/silver/matches_catalog")
     demo_archive_dir: Path = Path("data/raw/demo_archives")
@@ -83,7 +86,6 @@ class ProjectConfig(BaseModel):
     download_timeout_seconds: int = Field(default=60, ge=1)
     download_rate_limit_seconds: int = Field(default=5, ge=0)
     max_downloads_per_run: int | None = Field(default=None, ge=1)
-    extract_archives: bool = True
     force_download: bool = False
     demo_manifest_path: Path = Path("data/bronze/demo_manifest/demo_manifest.parquet")
     local_archive_manifest_dir: Path = Path("data/bronze/local_archive_manifest")
@@ -94,6 +96,9 @@ class ProjectConfig(BaseModel):
     parse_manifest_dir: Path = Path("data/bronze/parse_manifest")
     parser_backend: Literal["awpy"] = "awpy"
     player_rosters_path: Path = Path("configs/player_rosters.yaml")
+    team_registry_path: Path = Path("configs/player_rosters.yaml")
+    timing_config_path: Path = Path("configs/timing.yaml")
+    role_feature_output_dir: Path = Path("data/gold/features/role_aware")
     feature_windows: FeatureWindowsConfig = Field(default_factory=FeatureWindowsConfig)
     parse_player_props: list[str] = Field(
         default_factory=lambda: [

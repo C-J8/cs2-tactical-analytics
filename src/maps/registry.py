@@ -54,6 +54,7 @@ class MapRegistry:
     semantic_groups: dict[str, SemanticGroup]
     bombsites: dict[str, Bombsite]
     aliases: dict[str, list[str]]
+    assets: dict[str, Any]
     source_path: Path | None = None
 
     def get_region(self, region_id: str) -> PhysicalRegion | None:
@@ -154,6 +155,7 @@ def registry_from_config(config: dict[str, Any], *, registry_version: str, sourc
         semantic_groups=semantic,
         bombsites=bombsites,
         aliases=aliases,
+        assets=dict(config.get("assets") or {}),
         source_path=source_path,
     )
 

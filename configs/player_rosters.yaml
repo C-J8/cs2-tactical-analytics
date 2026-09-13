@@ -1,5 +1,13 @@
+team_registry_version: v1
+default_source: project_manual_roster
+notes: >-
+  Canonical project-local identity registry. Membership dates and immutable external
+  player identifiers remain intentionally blank until a verified source is adopted.
+
 teams:
   - team_name: Vitality
+    team_id: vitality
+    source: project_manual_roster
     aliases:
       - Team Vitality
     players:
@@ -16,6 +24,8 @@ teams:
           - apex
 
   - team_name: G2
+    team_id: g2
+    source: project_manual_roster
     aliases:
       - G2 Esports
     players:
@@ -30,6 +40,8 @@ teams:
       - player_name: MATYS
 
   - team_name: FURIA
+    team_id: furia
+    source: project_manual_roster
     players:
       - player_name: FalleN
       - player_name: KSCERATO
@@ -38,6 +50,8 @@ teams:
       - player_name: molodoy
 
   - team_name: Spirit
+    team_id: spirit
+    source: project_manual_roster
     players:
       - player_name: donk
       - player_name: chopper
@@ -48,6 +62,8 @@ teams:
       - player_name: zont1x
 
   - team_name: The MongolZ
+    team_id: the_mongolz
+    source: project_manual_roster
     aliases:
       - MongolZ
     players:
@@ -62,6 +78,8 @@ teams:
           - mzinho
 
   - team_name: Falcons
+    team_id: falcons
+    source: project_manual_roster
     players:
       - player_name: NiKo
       - player_name: m0NESY
@@ -70,6 +88,8 @@ teams:
       - player_name: TeSeS
 
   - team_name: NAVI
+    team_id: navi
+    source: project_manual_roster
     aliases:
       - Natus Vincere
     players:
@@ -80,6 +100,8 @@ teams:
       - player_name: w0nderful
 
   - team_name: B8
+    team_id: b8
+    source: project_manual_roster
     players:
       - player_name: npl
       - player_name: alex666
@@ -87,6 +109,8 @@ teams:
       - player_name: esenthial
 
   - team_name: BC.Game
+    team_id: bc_game
+    source: project_manual_roster
     aliases:
       - BC Game
       - BCGame
@@ -95,6 +119,8 @@ teams:
       - player_name: electronic
 
   - team_name: GamerLegion
+    team_id: gamerlegion
+    source: project_manual_roster
     players:
       - player_name: REZ
       - player_name: Tauson
@@ -102,6 +128,8 @@ teams:
       - player_name: NertZ
 
   - team_name: FUT
+    team_id: fut
+    source: project_manual_roster
     players:
       - player_name: cobrazera
       - player_name: controlez
@@ -110,6 +138,8 @@ teams:
       - player_name: hypex
 
   - team_name: PARIVISION
+    team_id: parivision
+    source: project_manual_roster
     players:
       - player_name: Jame
       - player_name: BELCHONOKK

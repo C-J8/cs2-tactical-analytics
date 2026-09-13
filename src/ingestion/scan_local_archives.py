@@ -83,7 +83,7 @@ def run_scan_pipeline(
     project = load_project_config(config_path)
     target_team = target_team or project.target_teams[0]
     assumed_map = assumed_map or project.target_maps[0]
-    input_dir = input_dir or project.demo_archive_dir / target_team / assumed_map
+    input_dir = input_dir or project.demo_archive_dir / target_team
 
     archives = scan_archive_files(input_dir)
     if limit is not None:
@@ -120,8 +120,8 @@ def scan_archive_files(input_dir: Path) -> list[Path]:
     if not input_dir.exists():
         return []
     return sorted(
-        [path for path in input_dir.iterdir() if path.is_file() and path.suffix.lower() in ARCHIVE_EXTENSIONS],
-        key=lambda path: path.name.lower(),
+        [path for path in input_dir.rglob("*") if path.is_file() and path.suffix.lower() in ARCHIVE_EXTENSIONS],
+        key=lambda path: str(path).lower(),
     )
 
 

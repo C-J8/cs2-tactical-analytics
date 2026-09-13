@@ -30,6 +30,15 @@ validation:
   method: stratified_kfold_out_of_fold
   n_splits: 5
   random_seed: 42
+  historical_status: preserved_for_reproducibility
+  grouped_follow_up:
+    config: configs/modeling/mirage_ab_grouped_validation.yaml
+    output_dir: data/gold/modeling/mirage_ab_grouped_validation
+    primary_method: stratified_group_kfold_by_series_id
+    sensitivity_method: leave_one_series_out
+    status: completed_group_isolated
+    resolved_group_column: series_id
+    audit: data/gold/modeling/mirage_ab_grouped_validation/grouped_validation_audit.parquet
 limitations:
 - small_sample
 - class_B_lower_support

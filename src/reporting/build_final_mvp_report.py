@@ -317,7 +317,15 @@ def build_project_summary(
 
 def build_stage_status() -> pd.DataFrame:
     rows = [
-        stage("Stage 1", "Match Catalog", "Build match/map catalog", "manual seed", "matches_catalog", "ok", "Offline seed remains source of truth."),
+        stage(
+            "Stage 1",
+            "Match Catalog",
+            "Build match/map catalog",
+            "HLTV discovery + manual fallback",
+            "matches_catalog + discovery manifest",
+            "ok",
+            "Hybrid discovery preserves the manual seed when the remote source is unavailable.",
+        ),
         stage("Stage 2", "Local Demo Archive", "Register and extract local archives", "matches_catalog", "demo manifests", "ok", "Supports HLTV manual download flow."),
         stage("Stage 3", "Demo Parsing", "Parse target-map demos", "dem_files_manifest", "silver parsed tables", "ok", "Awpy tables feed downstream stages."),
         stage("Stage 3.6", "Parse Quality Gate", "Filter feature-eligible demos", "parse_manifest", "feature_eligible_demos", "ok", "Prevents short/suspicious demos from entering features."),

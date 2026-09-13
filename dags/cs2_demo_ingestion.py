@@ -12,22 +12,35 @@ PARSE_QUALITY_READY = Asset("cs2://silver/parse-quality")
 
 with DAG(
     dag_id="cs2_demo_ingestion",
-    description="Catalog, extract, probe, parse, and validate locally supplied CS2 demos.",
+    description="Catalog, acquire, extract, probe, parse, and validate CS2 demos.",
     schedule=None,
     start_date=datetime(2026, 1, 1),
     catchup=False,
     max_active_runs=1,
     render_template_as_native_obj=True,
     params={
-        "target_map": "Inferno",
+        "target_map": "Mirage",
         "target_team": "Vitality",
         "force": False,
     },
-    tags=["cs2", "ingestion", "offline-first"],
+    tags=["cs2", "ingestion", "archive-first"],
 ) as dag:
     build_catalog = run_project_module.override(task_id="build_match_catalog")(
         "src.ingestion.build_match_catalog",
-        ["--config", PROJECT_CONFIG],
+        [
+            "--config",
+            PROJECT_CONFIG,
+            "--target-map",
+            "{{ params.target_map }}",
+            "--target-team",
+            "{{ params.target_team }}",
+        ],
+    )
+
+    download_archives = run_project_module.override(task_id="download_archives")(
+        "src.ingestion.download_demos",
+        ["--config", PROJECT_CONFIG, "--require-ready"],
+        force="{{ params.force }}",
     )
 
     scan_archives = run_project_module.override(task_id="scan_local_archives")(
@@ -38,6 +51,8 @@ with DAG(
             "--extract",
             "--target-team",
             "{{ params.target_team }}",
+            "--assumed-map",
+            "{{ params.target_map }}",
         ],
         force="{{ params.force }}",
     )
@@ -77,4 +92,4 @@ with DAG(
         force="{{ params.force }}",
     )
 
-    build_catalog >> scan_archives >> probe_metadata >> parse_demos >> parse_quality
+    build_catalog >> download_archives >> scan_archives >> probe_metadata >> parse_demos >> parse_quality

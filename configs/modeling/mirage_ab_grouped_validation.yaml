@@ -1,0 +1,46 @@
+validation_id: vitality_mirage_ab_grouped_validation_v1
+candidate_id: vitality_mirage_t_ab_35s_stable_only_logistic_v1
+target_team: Vitality
+target_map: Mirage
+label_column: target_site_model_label
+positive_class: B
+probability_threshold: 0.5
+input_dataset: data/gold/round_features/round_features_t_side_planted.parquet
+candidate_predictions: data/gold/modeling/t_side_ab_candidate/candidate_model_predictions.parquet
+candidate_feature_set: data/gold/modeling/t_side_ab_candidate/candidate_model_feature_set.parquet
+group_priority:
+  - series_id
+  - parse_id
+primary_validation:
+  method: stratified_group_kfold
+  n_splits: 5
+  shuffle: true
+  random_state: 42
+sensitivity_validation:
+  method: leave_one_group_out
+model:
+  type: logistic_regression
+  imputer: median
+  scaler: standard
+  class_weight: balanced
+  max_iter: 2000
+  random_state: 42
+bootstrap:
+  clustered_by: resolved_group_id
+  resamples: 2000
+  confidence_level: 0.95
+  random_state: 42
+primary_metric: macro_f1
+secondary_metrics:
+  - balanced_accuracy
+  - recall_B
+  - B_predicted_as_A
+  - roc_auc
+  - average_precision
+  - brier_score
+  - log_loss
+  - matthews_correlation
+notes: >-
+  Revalidates the frozen exploratory candidate without allowing rounds from the same
+  series (or fallback parse) to cross train/test boundaries. It does not overwrite
+  the historical StratifiedKFold artifacts.

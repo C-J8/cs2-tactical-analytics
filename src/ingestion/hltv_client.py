@@ -5,8 +5,9 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 import requests
 from bs4 import BeautifulSoup
@@ -41,21 +42,54 @@ class HltvClient:
 
     def fetch_match_page(self, match_url: str, match_id: str | None = None) -> HltvFetchResult:
         cache_path = self._cache_path(match_url, match_id)
+        return self._fetch_page(match_url, cache_path)
+
+    def fetch_results_page(
+        self,
+        team_id: int,
+        date_start: date,
+        date_end: date,
+        *,
+        map_codes: list[str] | None = None,
+        offset: int = 0,
+    ) -> HltvFetchResult:
+        results_url = build_results_url(
+            team_id,
+            date_start,
+            date_end,
+            map_codes=map_codes,
+            offset=offset,
+        )
+        maps_key = "-".join(sorted(map_codes or [])) or "all-maps"
+        cache_path = self.cache_dir / (
+            f"hltv_results_team_{team_id}_{date_start.isoformat()}_{date_end.isoformat()}_"
+            f"{maps_key}_offset_{offset}.html"
+        )
+        return self._fetch_page(results_url, cache_path)
+
+    def _fetch_page(self, url: str, cache_path: Path) -> HltvFetchResult:
         if self.cache_enabled and cache_path.exists():
             LOGGER.info("Using cached HLTV page: %s", cache_path)
-            return HltvFetchResult(cache_path.read_text(encoding="utf-8"), cache_path, True)
+            html = cache_path.read_text(encoding="utf-8")
+            if is_security_challenge(html):
+                return HltvFetchResult(None, cache_path, True, "cached page is an HLTV security challenge")
+            return HltvFetchResult(html, cache_path, True)
 
         if self.rate_limit_seconds > 0:
             time.sleep(self.rate_limit_seconds)
 
         try:
-            response = self.session.get(match_url, timeout=20)
+            response = self.session.get(url, timeout=20)
             response.raise_for_status()
         except requests.RequestException as exc:
-            LOGGER.warning("Failed to fetch HLTV page %s: %s", match_url, exc)
+            LOGGER.warning("Failed to fetch HLTV page %s: %s", url, exc)
             return HltvFetchResult(None, cache_path, False, str(exc))
 
         html = response.text
+        if is_security_challenge(html):
+            error = "HLTV returned a security challenge; manual fallback is required"
+            LOGGER.warning("%s for %s", error, url)
+            return HltvFetchResult(None, cache_path, False, error)
         if self.cache_enabled:
             cache_path.write_text(html, encoding="utf-8")
         return HltvFetchResult(html, cache_path if self.cache_enabled else None, False)
@@ -77,6 +111,60 @@ def build_match_url(match_id: str | None) -> str | None:
     if not match_id:
         return None
     return f"{HLTV_BASE_URL}/matches/{match_id}/match"
+
+
+def build_results_url(
+    team_id: int,
+    date_start: date,
+    date_end: date,
+    *,
+    map_codes: list[str] | None = None,
+    offset: int = 0,
+) -> str:
+    params: list[tuple[str, object]] = [
+        ("team", team_id),
+        ("startDate", date_start.isoformat()),
+        ("endDate", date_end.isoformat()),
+    ]
+    params.extend(("map", map_code) for map_code in map_codes or [])
+    if offset:
+        params.append(("offset", offset))
+    return f"{HLTV_BASE_URL}/results?{urlencode(params)}"
+
+
+def parse_results_page(html: str) -> list[dict[str, str]]:
+    soup = BeautifulSoup(html, "html.parser")
+    matches: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+    for link in soup.select(".result-con a.a-reset[href^='/matches/']"):
+        href = clean_string(link.get("href"))
+        match_id = extract_match_id(href)
+        if not href or not match_id or match_id in seen_ids:
+            continue
+        seen_ids.add(match_id)
+        matches.append(
+            {
+                "hltv_match_id": match_id,
+                "match_url": f"{HLTV_BASE_URL}{href}",
+            }
+        )
+    return matches
+
+
+def results_has_next_page(html: str, *, next_offset: int) -> bool:
+    soup = BeautifulSoup(html, "html.parser")
+    return soup.select_one(f"a[href*='offset={next_offset}']") is not None
+
+
+def is_security_challenge(html: str) -> bool:
+    lowered = html.lower()
+    challenge_markers = (
+        "cf-chl-",
+        "executando verificação de segurança",
+        "performing security verification",
+        "just a moment",
+    )
+    return any(marker in lowered for marker in challenge_markers)
 
 
 def parse_match_page(html: str) -> dict[str, object]:
@@ -107,10 +195,21 @@ def parse_match_page(html: str) -> dict[str, object]:
         parsed["demo_link"] = href if href.startswith("http") else f"{HLTV_BASE_URL}{href}"
 
     maps = []
-    for node in soup.select(".mapname, .map-name-holder, .played, .optional"):
+    for holder in soup.select(".mapholder"):
+        node = holder.select_one(".mapname")
+        if node is None:
+            continue
+        scores = [score.get_text(" ", strip=True) for score in holder.select(".results-team-score")]
+        if scores and all(score == "-" for score in scores):
+            continue
         text = node.get_text(" ", strip=True)
         if text:
             maps.append(text)
+    if not maps:
+        for node in soup.select(".mapname"):
+            text = node.get_text(" ", strip=True)
+            if text:
+                maps.append(text)
     if maps:
         parsed["maps"] = list(dict.fromkeys(maps))
 

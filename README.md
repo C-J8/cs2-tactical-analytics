@@ -46,7 +46,7 @@ Validated local snapshot for Vitality on Mirage + Inferno:
 - 1 Stage 8.11 Inferno A/B exploratory baseline with 40 high-confidence Inferno planted T-side rounds, 22 A / 18 B labels, 5 leave-one-series-out groups, 8 leakage-safe predictors at 35 seconds, OOF macro F1 `0.472`, balanced accuracy `0.472`, MCC `-0.055`, ROC AUC `0.487`, Brier score `0.261`, log loss `0.715`, null percentile `0.470`, exploratory signal status `no_signal`, `model_status = exploratory_only`, and `ready_for_stage_8_12 = true`;
 - 1 Stage 8.11.1 modeling integrity gate with real Stage 8.9/8.9.1 lineage, fail-closed feature evidence, 11 candidate features audited, 8 approved model predictors, 21 round-level OOF errors, frozen methodology preserved, core Gold unchanged, `status = passed`, and `ready_for_stage_8_12 = true`;
 - 1 Stage 8.12 Inferno sample-expansion readiness gate with 5 Inferno demos, 5 independent series, 4 inferred opponents, 40 planted T-side model rows, 22 A / 18 B labels, 5 model groups, 0 new demos added by the stage, `data_readiness = expanded_but_limited`, `modeling_sample_ready = false`, frozen baseline unchanged at macro F1 `0.472`, balanced accuracy `0.472`, MCC `-0.055`, null percentile `0.470`, `signal_status = no_signal`, and `recommended_next_action = continue_sample_expansion`;
-- 290 tests passing and `ruff check .` passing.
+- 316 tests passing and `ruff check .` passing.
 
 The Git repository intentionally excludes downloaded demos and generated Bronze/Silver/Gold datasets. Only code, configs, tests, notebooks, documentation, and the manual match seed are versioned.
 
@@ -68,6 +68,7 @@ After local archives/demos are available, rebuild the current pipeline in this o
 
 ```bash
 python -m src.ingestion.build_match_catalog --config configs/project.yaml
+python -m src.ingestion.download_demos --config configs/project.yaml --require-ready
 python -m src.ingestion.scan_local_archives --config configs/project.yaml --extract --force
 python -m src.parsing.probe_dem_metadata --config configs/project.yaml --force
 python -m src.parsing.parse_demos --config configs/project.yaml --force
@@ -139,9 +140,9 @@ Important dependency rules:
 - Initial map: Mirage
 - Configurable date window
 - Professional matches discovered through HLTV metadata
-- Offline-first manual mode with an optional conservative scrape mode
+- Hybrid acquisition: conservative automatic discovery/download with a deterministic manual fallback
 
-HLTV has no official public API. Scraping can be blocked or throttled, so `manual` mode is the source of truth for this stage and must keep working without internet access.
+HLTV has no official public API. Discovery and download can be blocked or throttled, so the manual seed and local archive registration remain first-class recovery paths. The default `hybrid` mode attempts automation without bypassing security challenges and preserves the manual input when the remote source is unavailable.
 
 ## Setup
 
@@ -178,7 +179,7 @@ rules.
 
 Edit these files to expand the catalog without changing code:
 
-- `configs/project.yaml`: mode, date window, target maps, target teams, output formats, cache/rate limit.
+- `configs/project.yaml`: mode, date window, target maps/teams, discovery limits, download batch size, output formats, cache/rate limit.
 - `configs/teams.yaml`: canonical team names, HLTV ids, aliases.
 - `configs/maps.yaml`: canonical map names and aliases.
 - `configs/maps/map_registry.yaml`: global index of versioned map-region registry configs.
@@ -210,19 +211,22 @@ python -m src.ingestion.build_match_catalog --config configs/project.yaml
 The command:
 
 1. Loads project, team, and map configs.
-2. Loads the manual CSV.
-3. Optionally enriches rows from cached/fetched HLTV pages when `mode: scrape`.
-4. Standardizes aliases and validates records.
-5. Writes CSV and Parquet outputs.
-6. Prints a terminal summary.
+2. In `hybrid`/`scrape`, queries the HLTV results page by team, date range, and target map.
+3. Opens each discovered match page conservatively to collect played maps and the demo link.
+4. In `hybrid`, merges that result with the manual CSV and preserves the manual rows if discovery is blocked.
+5. Standardizes aliases, deduplicates match/map records, and validates the catalog.
+6. Writes CSV/Parquet outputs plus a request-level discovery manifest.
+7. Prints a terminal summary.
 
 ## Modes
 
 `manual`: reads only `data/raw/manual/matches_seed.csv`, never accesses HLTV, and writes the final catalog.
 
-`scrape`: starts from the manual CSV, attempts to fetch or reuse cached HLTV pages in `data/raw/hltv_pages/`, respects `rate_limit_seconds`, and fills missing metadata when possible. If scraping fails, manual data is preserved and warnings are emitted.
+`scrape`: discovers matches from HLTV without requiring the manual seed. It is appropriate only when an empty catalog is acceptable if the remote source is unavailable.
 
-In `scrape` mode, `source_method` is assigned per row. Rows only become `manual+scrape` when the cached/fetched HTML actually fills a catalog field; rows that cannot be enriched remain `manual`.
+`hybrid` (default): attempts automatic discovery, enriches manual rows when possible, and merges both sources. A Cloudflare/security challenge is recorded as `blocked_or_failed`; it is never bypassed. Manual rows remain usable, so a remote discovery failure does not erase the known catalog.
+
+`source_method` is assigned per row as `scrape`, `manual`, or `manual+scrape`.
 
 ## Outputs
 
@@ -231,9 +235,14 @@ Final catalog:
 - `data/silver/matches_catalog/matches_catalog.csv`
 - `data/silver/matches_catalog/matches_catalog.parquet`
 
-Raw manual snapshot:
+Raw catalog-input snapshot (automatic plus manual in `hybrid` mode):
 
 - `data/bronze/match_catalog_raw/match_catalog_raw.csv`
+
+Discovery audit:
+
+- `data/bronze/match_discovery_manifest/match_discovery_manifest.csv`
+- `data/bronze/match_discovery_manifest/match_discovery_manifest.parquet`
 
 Final schema:
 
@@ -255,7 +264,7 @@ Open `notebooks/01_validate_match_catalog.ipynb` to inspect the generated Parque
 
 ## Stage 2
 
-Stage 2 adds demo download orchestration, archive extraction, and a reproducible manifest. It still does not parse demos, build features, train models, or create dashboards.
+Stage 2 adds demo archive acquisition/registration and a reproducible manifest. Extraction belongs only to Stage 3. It still does not parse demos, build features, train models, or create dashboards.
 
 ### Stage 2 -- Demo Download
 
@@ -275,17 +284,16 @@ python -m src.ingestion.download_demos --config configs/project.yaml --dry-run
 Real download:
 
 ```bash
-python -m src.ingestion.download_demos --config configs/project.yaml --limit 3
+python -m src.ingestion.download_demos --config configs/project.yaml --require-ready
 ```
 
 Useful options:
 
 ```bash
 python -m src.ingestion.download_demos --config configs/project.yaml --include-warnings --force
-python -m src.ingestion.download_demos --config configs/project.yaml --no-extract
 python -m src.ingestion.download_demos --config configs/project.yaml --catalog path/to/matches_catalog.parquet
 python -m src.ingestion.download_demos --config configs/project.yaml --local-only
-python -m src.ingestion.download_demos --config configs/project.yaml --archive-path path/to/downloaded-demo.rar --limit 1
+python -m src.ingestion.download_demos --config configs/project.yaml --match-id 2389666 --archive-path path/to/downloaded-demo.rar --require-ready
 ```
 
 Downloaded archives are saved under:
@@ -294,64 +302,64 @@ Downloaded archives are saved under:
 data/raw/demo_archives/<target_team>/<map_name>/
 ```
 
-Extracted `.dem` files are saved under:
+`download_demos` never extracts `.dem` files. Archive acquisition and DEM extraction have separate ownership: this stage acquires or registers archives, and `scan_local_archives` is the only extraction stage.
 
-```text
-data/raw/demos/<target_team>/<map_name>/
-```
+Before opening an HTTP connection, the downloader checks whether the expected `.dem`, `.zip`, `.rar`, or `.download` archive already exists locally. A matching local archive is hashed, registered, and handed to the scanner without a network request.
 
 The manifest is written to:
 
 - `data/bronze/demo_manifest/demo_manifest.csv`
 - `data/bronze/demo_manifest/demo_manifest.parquet`
 
-The manifest records one row per downloaded/extracted demo record. If an archive contains multiple `.dem` files, each `.dem` gets its own row. Failed or missing demos are kept in the manifest with status and error details instead of stopping the whole run.
+The acquisition manifest records one row per series/archive, even when a BO3/BO5 contains multiple target maps. `archive_ready_for_scan = true` means the archive exists locally and can be handed to `scan_local_archives`. `max_downloads_per_run` limits only new remote attempts; already local series do not consume the batch, so repeated executions advance through the backlog instead of revisiting the same first rows.
+
+The Airflow DAG uses `--require-ready`. A blocked or missing selected archive is written to the manifest first and then fails the task, preventing extraction and parsing from running on an incomplete batch. Rows deferred only because of the configured batch limit are handled by later runs.
 
 Key statuses:
 
 - `download_status`: `downloaded`, `skipped_existing`, `failed`, `blocked_remote`, `local_existing`, `local_registered`, `missing_local_archive`, `missing_demo_link`, `dry_run`
-- `extract_status`: `extracted`, `skipped_existing`, `failed`, `not_needed`, `unsupported_archive`, `dry_run`
+- `archive_ready_for_scan`: whether the local archive is ready for the extraction stage
+- `manual_action_required`: whether a browser/manual registration step is needed
+- `manual_download_page`, `expected_archive_directory`, `expected_archive_stem`, `manual_registration_command`: the exact recovery handoff
 - `status`: `ok`, `warning`, `failed`
 
 `blocked_remote` means the remote host refused the download, commonly with HTTP 403 or 429. The pipeline records it as `status = warning` because the code and local network path worked, but the host declined access.
 
 When HLTV blocks automatic download:
 
-1. Run the normal command first and inspect the manifest.
-2. If `download_status = blocked_remote`, download the demo manually in a browser.
-3. Put the file in `data/raw/demo_archives/<target_team>/<map_name>/` using the expected base name, such as `hltv_2389666_mirage_map1.rar`.
-4. Run:
+1. Run the normal command first and inspect `demo_manifest`.
+2. For a row with `manual_action_required = true`, open `manual_download_page` and download the demo in a browser.
+3. Run the row's `manual_registration_command`, replacing `<arquivo_baixado>` with the local file path. The `--match-id` selector prevents one file from being registered against multiple matches.
+4. Trigger ingestion again. The downloader detects the registered archive locally and the remaining stages continue automatically.
 
 ```bash
-python -m src.ingestion.download_demos --config configs/project.yaml --local-only --limit 1
+python -m src.ingestion.download_demos --config configs/project.yaml --match-id 2389666 --archive-path path/to/browser-download.rar --require-ready
 ```
 
 `--local-only` never makes HTTP requests. It looks for the expected base name in this extension order: `.dem`, `.zip`, `.rar`, `.download`.
 
-Alternatively, register a browser-downloaded file from any path:
+To verify an already registered file without network access:
 
 ```bash
-python -m src.ingestion.download_demos --config configs/project.yaml --archive-path path/to/browser-download.rar --limit 1
+python -m src.ingestion.download_demos --config configs/project.yaml --match-id 2389666 --local-only --require-ready
 ```
 
-This copies the file into the standard archive directory without overwriting unless `--force` is set, calculates size/hash, and then extracts when extraction is enabled.
+This copies the file into the standard archive directory without overwriting unless `--force` is set and records its size and SHA-256. It does not extract the archive.
 
-RAR extraction is optional. The pipeline first looks for `7z`/`7za`; if neither exists, the archive remains saved and the manifest records `unsupported_archive` with a clear message. Demo parsing is reserved for Stage 3.
-
-On Windows, install 7-Zip and add its install directory to `PATH` when `.rar` extraction reports `RAR extraction requires 7z/7za on PATH`. You can also extract the archive manually and place `.dem` files under `data/raw/demos/<target_team>/<map_name>/`.
+RAR extraction happens only in `scan_local_archives`. On Windows, that stage looks for `7z`/`7za` and reports a controlled error when neither executable is available.
 
 ## Stage 3
 
-Stage 3 parses extracted `.dem` files into bronze per-demo tables and silver consolidated tables. It uses Awpy as the parser backend and does not implement feature engineering, ML, BigQuery, or dashboards.
+Stage 3 scans and extracts acquired archives, then parses `.dem` files into bronze per-demo tables and silver consolidated tables. It uses Awpy as the parser backend and does not implement feature engineering, ML, BigQuery, or dashboards.
 
 ### Bulk Local Archive Intake
 
 When HLTV blocks automatic downloads, manually downloaded `.rar`, `.zip`, or `.dem` files can be scanned in bulk.
 
-Default input for the current MVP:
+Default input for the current MVP is the complete team subtree (recursive):
 
 ```text
-data/raw/demo_archives/Vitality/Mirage/
+data/raw/demo_archives/Vitality/
 ```
 
 Dry-run scan:
@@ -2503,3 +2511,17 @@ Strict exclusions:
 - no dashboard, Streamlit, BigQuery, deployment, or promoted model.
 
 The next stage should be chosen from this evidence. Given `exploratory_signal_status = no_signal`, the most natural next step is sample expansion and modeling-readiness work rather than trying to tune this model into a better headline metric.
+
+# Mirage: consolidação técnica
+
+A separação entre features de ataque/defesa, contrato de 64 ticks/s, registro de equipes, assets completos do mapa e validação agrupada do candidato está documentada em [docs/mirage_consolidation_technical.md](docs/mirage_consolidation_technical.md).
+
+O critério operacional para declarar o Mirage consolidado é executável e fail-closed:
+
+```bash
+python -m src.validation.mirage_consolidation_gate --config configs/project.yaml --force
+```
+
+Enquanto houver bloqueios, o comando ainda grava o relatório, mas termina com código diferente de zero. Para apenas atualizar o diagnóstico local sem falhar a execução, acrescente `--report-only`.
+
+O contrato fica em `configs/quality/mirage_consolidation.yaml`, as aprovações/evidências em `configs/quality/mirage_consolidation_evidence.yaml` e o status gerado em [docs/mirage_consolidation_status.md](docs/mirage_consolidation_status.md).

@@ -1,0 +1,12 @@
+timing_contract_version: v1
+default_tickrate: 64
+default_source: project_assumption
+default_confidence: assumed
+notes: >-
+  CS2 demos in the current project are interpreted at 64 ticks per second. Awpy's
+  object default is not treated as demo metadata. The contract can be superseded
+  per parse only by an explicit parsed value or a documented override below.
+validation:
+  expected_freeze_seconds: 20.0
+  tolerance_seconds: 2.0
+overrides: []

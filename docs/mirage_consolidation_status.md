@@ -1,0 +1,52 @@
+# Status de consolidação do Mirage
+
+O Mirage só é considerado consolidado quando todos os critérios bloqueantes do contrato passam. Desempenho do modelo não substitui proveniência, reprodutibilidade, validação do mapa ou segurança de armazenamento.
+
+## Decisão atual
+
+- Status: `not_consolidated`
+- Critérios aprovados: `11/19`
+- Critérios bloqueantes em aberto: `7`
+- Evidências manuais/de execução pendentes: `4`
+- Alertas não bloqueantes: `1`
+- Próximo bloqueio: `manual_region_review`
+
+## Critérios
+
+| category      | check_id                               | evaluation   | blocking   | status   | expected                                                                                                  | evidence                                                                                |
+|:--------------|:---------------------------------------|:-------------|:-----------|:---------|:----------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------------|
+| map           | map_registry_complete                  | automatic    | True       | passed   | registry_status=active and all three inventories non-empty                                                | E:\Projeto CS\configs\maps\map_registry.yaml; E:\Projeto CS\configs\maps\mirage.yaml    |
+| map           | map_assets_verified                    | automatic    | True       | passed   | verified_assets == manifest_rows > 0                                                                      | E:\Projeto CS\data\reference\maps\awpy\2000899\mirage_asset_manifest.csv                |
+| provenance    | valid_full_map_demo_floor              | automatic    | True       | passed   | >= 15                                                                                                     | data/bronze/parse_quality/parse_quality                                                 |
+| storage       | physical_demo_inventory_reconciled     | automatic    | True       | passed   | orphan_dems=0 and missing_dems=0                                                                          | data/bronze/dem_files_manifest/dem_files_manifest                                       |
+| provenance    | source_archives_recoverable            | automatic    | True       | passed   | recoverable == scoped_dems > 0                                                                            | data/bronze/dem_files_manifest/dem_files_manifest                                       |
+| features      | timing_contract_validated              | automatic    | True       | passed   | all eligible parse_ids consistent                                                                         | data/gold/features/demo_timing/demo_timing_audit                                        |
+| map           | required_map_semantics_resolved        | automatic    | True       | passed   | missing=[]                                                                                                | E:\Projeto CS\configs\maps\mirage.yaml                                                  |
+| features      | canonical_role_features_passed         | automatic    | True       | passed   | status=passed and unknown_place_share <= 0.0                                                              | data/gold/features/role_aware/role_feature_audit                                        |
+| map           | manual_region_review                   | manual       | True       | pending  | status=passed with run/reviewer evidence                                                                  | configs/quality/mirage_consolidation_evidence.yaml                                      |
+| modeling      | grouped_validation_isolated            | automatic    | True       | passed   | status=passed, overlap=0, groups >= 10                                                                    | data/gold/modeling/mirage_ab_grouped_validation/grouped_validation_audit                |
+| modeling      | model_scope_declared                   | automatic    | True       | passed   | non-empty intended use and external-validation limitation                                                 | data/gold/modeling/mirage_ab_grouped_validation/grouped_validation_model_contract       |
+| governance    | mirage_regression_governed             | automatic    | True       | failed   | status=passed and critical_failures=0                                                                     | data/gold/validation/mirage_regression_gate/mirage_regression_audit                     |
+| governance    | team_membership_provenance_verified    | automatic    | False      | failed   | unverified_memberships=0                                                                                  | data/gold/reference/team_dictionary/team_dictionary_audit                               |
+| orchestration | downloader_in_end_to_end_orchestration | automatic    | True       | passed   | DAG references src.ingestion.download_demos with --require-ready before scan; downloader does not extract | E:\Projeto CS\dags\cs2_demo_ingestion.py; E:\Projeto CS\src\ingestion\download_demos.py |
+| orchestration | clean_room_rebuild                     | recorded_run | True       | pending  | status=passed with run/reviewer evidence                                                                  | configs/quality/mirage_consolidation_evidence.yaml                                      |
+| orchestration | idempotent_rerun                       | recorded_run | True       | pending  | status=passed with run/reviewer evidence                                                                  | configs/quality/mirage_consolidation_evidence.yaml                                      |
+| storage       | storage_and_retention_contract_defined | automatic    | True       | failed   | storage_version, roots, and retention configured                                                          | E:\Projeto CS\configs\storage.yaml                                                      |
+| storage       | silver_ticks_partitioned               | automatic    | True       | failed   | monolith absent and partition_files > 0                                                                   | E:\Projeto CS\data\silver\parsed_demos\table=ticks\**\*.parquet                         |
+| storage       | retention_recovery                     | recorded_run | True       | pending  | status=passed with run/reviewer evidence                                                                  | configs/quality/mirage_consolidation_evidence.yaml                                      |
+
+## Bloqueios em aberto
+
+| check_id                               | observed                                                                                                                                                                                                                                | remediation                                                                                            |
+|:---------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------|
+| manual_region_review                   | {"missing_required_evidence": ["reviewer", "reviewed_at", "reviewed_regions"], "notes": "Radar/nav spot checks have not yet been signed off.", "reviewed_at": null, "reviewed_regions": [], "reviewer": null, "status": "pending"}      | Radar/nav spot checks have not yet been signed off.                                                    |
+| mirage_regression_governed             | {"baseline": "mirage_mvp_map_ready_v1", "critical_failures": "301", "status": "failed"}                                                                                                                                                 | Review the known dataset drifts and renew or repair the baseline explicitly.                           |
+| clean_room_rebuild                     | {"completed_at": null, "missing_required_evidence": ["run_id", "completed_at"], "notes": "A full archive-to-Gold rebuild must be executed in an empty derived-data root.", "run_id": null, "status": "pending"}                         | A full archive-to-Gold rebuild must be executed in an empty derived-data root.                         |
+| idempotent_rerun                       | {"completed_at": null, "missing_required_evidence": ["run_id", "completed_at"], "notes": "A second identical run must produce no duplicate keys or unexpected content changes.", "run_id": null, "status": "pending"}                   | A second identical run must produce no duplicate keys or unexpected content changes.                   |
+| storage_and_retention_contract_defined | {"path_exists": false, "sections": []}                                                                                                                                                                                                  | Create the storage contract before moving or deleting any data.                                        |
+| silver_ticks_partitioned               | {"monolith_exists": true, "partition_files": 0}                                                                                                                                                                                         | Migrate Silver ticks to partitioned Parquet and validate row/hash parity.                              |
+| retention_recovery                     | {"completed_at": null, "missing_required_evidence": ["run_id", "completed_at"], "notes": "One extracted DEM must be removed and recovered from its retained archive before retention is enabled.", "run_id": null, "status": "pending"} | One extracted DEM must be removed and recovered from its retained archive before retention is enabled. |
+
+## Regra de expansão
+
+Não adicionar uma segunda equipe-alvo nem promover outro mapa no pipeline de referência enquanto `status != consolidated`. Trabalho exploratório pode continuar, mas não pode redefinir o contrato de referência do Mirage.
