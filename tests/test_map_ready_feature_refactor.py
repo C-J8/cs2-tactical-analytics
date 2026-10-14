@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.features.map_refactor_audit import build_compatibility_table
+from src.features.map_refactor_audit import build_compatibility_table, scope_compatibility_baselines
 from src.maps.geometry import UnsupportedGeometryError, contains_point
 from src.maps.registry import load_map_registry, registry_from_config
 from src.maps.semantic import legacy_feature_groups_for_registry, resolve_feature_requirements
@@ -36,6 +36,25 @@ def _registry_config() -> dict:
         "aliases": {"mid": ["Middle"], "a_ramp": ["Ramp"], "palace": ["Palace"], "a_site": ["A Site"], "b_site": ["B Site"], "box": ["Box"]},
         "bombsites": {"A": {"region_ids": ["a_site"]}, "B": {"region_ids": ["b_site"]}},
     }
+
+
+def test_compatibility_baseline_is_scoped_to_map_and_team() -> None:
+    registry = registry_from_config(_registry_config(), registry_version="v1")
+    frame = pd.DataFrame(
+        [
+            {"round_feature_id": "m1", "map_name": "Mirage", "target_team": "Vitality"},
+            {"round_feature_id": "i1", "map_name": "Inferno", "target_team": "Vitality"},
+            {"round_feature_id": "m2", "map_name": "de_mirage", "target_team": "NAVI"},
+        ]
+    )
+
+    scoped = scope_compatibility_baselines(
+        {"round_features_mvp": frame},
+        registry=registry,
+        target_team="Vitality",
+    )
+
+    assert scoped["round_features_mvp"]["round_feature_id"].tolist() == ["m1"]
 
 
 def _region(

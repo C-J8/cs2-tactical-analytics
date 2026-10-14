@@ -14,6 +14,12 @@ from src.parsing.parse_audit import write_parse_audit
 from src.parsing.awpy_parser import AwpyParser
 from src.parsing.parse_manifest import PARSE_MANIFEST_COLUMNS, empty_parse_manifest, upsert_parse_manifest, write_parse_manifest
 from src.parsing.parsed_tables import bronze_output_dir, write_bronze_tables, write_silver_tables
+from src.storage.silver_tables import (
+    PARTITIONED_TABLES,
+    clear_partitioned_silver_table,
+    remove_partitioned_parse_ids,
+    silver_monolith_path,
+)
 from src.utils.io import read_catalog
 from src.utils.logging import configure_logging
 from src.utils.text import clean_string, safe_slug
@@ -67,7 +73,8 @@ def run_parse_pipeline(
     if reset_silver and not effective_force:
         raise ValueError("--reset-silver is destructive and requires --force.")
 
-    selected_parse_ids = {str(row["parse_id"]) for row in skipped}
+    skipped_parse_ids = {str(row["parse_id"]) for row in skipped}
+    selected_parse_ids = set(skipped_parse_ids)
     selected_parse_ids.update(build_parse_id(row.to_dict(), parser_backend) for _, row in eligible.iterrows())
 
     if eligible.empty and not skipped:
@@ -79,10 +86,17 @@ def run_parse_pipeline(
         outputs = write_parse_manifest(parse_manifest, project.parse_manifest_dir, project.output_formats)
         return parse_manifest, outputs, build_summary(parse_manifest, len(demo_manifest), 0)
 
+    legacy_ticks = silver_monolith_path(project.parsed_silver_dir, "ticks")
+    if effective_force and selected_parse_ids and not dry_run and not reset_silver and legacy_ticks.exists():
+        raise RuntimeError(
+            f"Cannot safely force a scoped parse while legacy Silver ticks exist at {legacy_ticks}. "
+            "Run src.storage.migrate_silver_ticks first, or use --reset-silver --force for an explicit full rebuild."
+        )
+
     if reset_silver and effective_force and not dry_run:
         clear_silver_tables(project.parsed_silver_dir)
-    elif effective_force and selected_parse_ids and not dry_run:
-        clear_selected_silver_rows(project.parsed_silver_dir, selected_parse_ids)
+    elif effective_force and skipped_parse_ids and not dry_run:
+        clear_selected_silver_rows(project.parsed_silver_dir, skipped_parse_ids)
 
     rows = skipped + process_parse_rows(
         eligible,
@@ -91,6 +105,7 @@ def run_parse_pipeline(
         force=effective_force,
         dry_run=dry_run,
         parser_class=parser_class,
+        registry_path=registry_path,
     )
     parse_manifest = pd.DataFrame(rows, columns=PARSE_MANIFEST_COLUMNS)
     scoped_summary_manifest = parse_manifest.copy()
@@ -116,6 +131,8 @@ def clear_silver_tables(output_dir: Path) -> None:
         return
     for path in output_dir.glob("*.parquet"):
         path.unlink()
+    for table_name in PARTITIONED_TABLES:
+        clear_partitioned_silver_table(output_dir, table_name)
 
 
 def clear_selected_silver_rows(output_dir: Path, parse_ids: set[str]) -> None:
@@ -132,6 +149,8 @@ def clear_selected_silver_rows(output_dir: Path, parse_ids: set[str]) -> None:
             .sink_parquet(temp_path)
         )
         temp_path.replace(path)
+    for table_name in PARTITIONED_TABLES:
+        remove_partitioned_parse_ids(output_dir, table_name, parse_ids)
 
 
 def load_parse_source(
@@ -290,6 +309,7 @@ def process_parse_rows(
     force: bool,
     dry_run: bool,
     parser_class: type[AwpyParser],
+    registry_path: Path,
 ) -> list[dict[str, object]]:
     parser = None if dry_run else parser_class(player_props=project.parse_player_props, parse_tables=project.parse_tables, parse_events=project.parse_events)
     manifest_rows: list[dict[str, object]] = []
@@ -316,7 +336,13 @@ def process_parse_rows(
             assert parser is not None
             parsed = parser.parse(dem_path)
             row_counts = write_bronze_tables(parsed.tables, parsed.events, output_dir)
-            write_silver_tables(parsed.tables, row_dict, parse_id, project.parsed_silver_dir)
+            write_silver_tables(
+                parsed.tables,
+                row_dict,
+                parse_id,
+                project.parsed_silver_dir,
+                registry_path=registry_path,
+            )
             manifest_rows.append(
                 parse_manifest_row(
                     row_dict,

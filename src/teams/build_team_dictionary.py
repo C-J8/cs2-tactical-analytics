@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import pandas as pd
+
 from src.config.schemas import load_project_config
 from src.teams.registry import load_team_registry, registry_audit
 from src.utils.io import write_dataframe_outputs
@@ -23,10 +25,12 @@ def run_team_dictionary_pipeline(
         else project_root / project.team_registry_path
     )
     registry = load_team_registry(registry_path)
+    audit_frames = [registry_audit(registry)]
+    audit_frames.extend(registry_audit(registry, team_id=team.team_id) for team in registry.teams)
     frames = {
         "team_dictionary": registry.team_frame(),
         "player_team_memberships": registry.membership_frame(),
-        "team_dictionary_audit": registry_audit(registry),
+        "team_dictionary_audit": pd.concat(audit_frames, ignore_index=True),
     }
     outputs: dict[str, Path] = {}
     if not dry_run:

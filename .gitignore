@@ -17,6 +17,7 @@ airflow/plugins/
 data/raw/hltv_pages/*.html
 data/raw/demo_archives/
 data/raw/demos/
+data/raw/quarantine/storage_migrations/
 data/bronze/**/*.csv
 data/bronze/**/*.parquet
 data/bronze/parsed_demos/

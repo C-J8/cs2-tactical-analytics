@@ -8,6 +8,7 @@ import polars as pl
 from src.config.schemas import FeatureWindowsConfig
 from src.features.feature_windows import FeatureWindow, configured_feature_windows, max_window_end
 from src.features.region_mapping import add_region_columns
+from src.storage.silver_tables import SilverScanSource
 
 
 REGION_FEATURE_GROUPS = {
@@ -18,7 +19,13 @@ REGION_FEATURE_GROUPS = {
 }
 
 
-def load_early_ticks(ticks_path: str, round_base: pd.DataFrame, *, windows: list[FeatureWindow] | None = None, tickrate: float = 64.0) -> pd.DataFrame:
+def load_early_ticks(
+    ticks_path: SilverScanSource,
+    round_base: pd.DataFrame,
+    *,
+    windows: list[FeatureWindow] | None = None,
+    tickrate: float = 64.0,
+) -> pd.DataFrame:
     if round_base.empty:
         return empty_early_ticks()
     windows = windows or configured_feature_windows(FeatureWindowsConfig())

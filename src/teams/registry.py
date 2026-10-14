@@ -146,24 +146,40 @@ def validate_registry(teams: list[TeamRecord], memberships: list[PlayerMembershi
             )
 
 
-def registry_audit(registry: TeamRegistry) -> pd.DataFrame:
+def registry_audit(registry: TeamRegistry, *, team_id: str | None = None) -> pd.DataFrame:
     memberships = registry.membership_frame()
+    if team_id is not None and not memberships.empty:
+        memberships = memberships[memberships["team_id"].astype(str).eq(team_id)].copy()
     duplicate_player_ids = memberships.groupby("player_id")["team_id"].nunique() if not memberships.empty else pd.Series()
     boundary_rows = (
         memberships["valid_from"].notna() | memberships["valid_to"].notna() if not memberships.empty else pd.Series(dtype=bool)
     )
+    verified_source = (
+        memberships["source"].astype(str).str.startswith(("https://", "http://"))
+        if not memberships.empty
+        else pd.Series(dtype=bool)
+    )
+    verified_confidence = (
+        ~memberships["confidence"].astype(str).str.casefold().eq("manual_unverified")
+        if not memberships.empty
+        else pd.Series(dtype=bool)
+    )
+    verified = verified_source & verified_confidence
     return pd.DataFrame(
         [
             {
                 "team_registry_version": registry.version,
+                "audit_scope": "team" if team_id is not None else "global",
+                "team_id": team_id,
                 "team_count": len(registry.teams),
                 "membership_count": len(registry.memberships),
+                "scoped_membership_count": len(memberships),
                 "player_count": int(memberships["player_id"].nunique()) if not memberships.empty else 0,
                 "players_with_multiple_teams": int((duplicate_player_ids > 1).sum()),
                 "date_bounded_memberships": int(boundary_rows.sum()),
-                "unverified_memberships": int((memberships["confidence"] == "manual_unverified").sum())
-                if not memberships.empty
-                else 0,
+                "verified_source_memberships": int(verified_source.sum()),
+                "verified_memberships": int(verified.sum()),
+                "unverified_memberships": int((~verified).sum()),
             }
         ]
     )

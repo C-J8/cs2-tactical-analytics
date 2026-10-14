@@ -10,6 +10,7 @@ import pandas as pd
 from src.parsing.awpy_parser import ParsedDemo
 from src.parsing.parse_demos import run_parse_pipeline
 from src.parsing.parsed_tables import TRACE_COLUMNS, write_silver_tables
+from src.storage.silver_tables import read_silver_table, silver_partition_files, write_partitioned_silver_table
 
 
 def _write_config(tmp_path: Path, manifest_path: Path) -> Path:
@@ -154,7 +155,7 @@ def test_write_parsed_tables_and_trace_columns(tmp_path: Path) -> None:
 
     traced = write_silver_tables(tables, row, "parse1", tmp_path)
 
-    assert (tmp_path / "ticks.parquet").exists()
+    assert len(silver_partition_files(tmp_path, "ticks")) == 1
     assert all(column in traced["ticks"].columns for column in TRACE_COLUMNS)
 
 
@@ -177,7 +178,7 @@ def test_parse_continues_after_one_failure(tmp_path: Path) -> None:
     assert parse_manifest["parse_status"].tolist() == ["failed", "parsed"]
     assert summary["total_failed"] == 1
     assert summary["total_parsed"] == 1
-    assert (tmp_path / "data/silver/parsed_demos/ticks.parquet").exists()
+    assert len(silver_partition_files(tmp_path / "data/silver/parsed_demos", "ticks")) == 1
 
 
 def test_parse_demos_uses_dem_files_manifest_and_filters_maps(tmp_path: Path) -> None:
@@ -442,11 +443,24 @@ def test_force_parse_preserves_other_silver_rows_and_writes_parse_audit(tmp_path
     pd.DataFrame([_manifest_row(dem_path)]).to_parquet(manifest_path, index=False)
     silver_dir = tmp_path / "data/silver/parsed_demos"
     silver_dir.mkdir(parents=True)
-    pd.DataFrame({"tick": [0], "source_parse_id": ["stale"]}).to_parquet(silver_dir / "ticks.parquet", index=False)
+    write_partitioned_silver_table(
+        silver_dir,
+        "ticks",
+        pd.DataFrame(
+            {
+                "tick": [0],
+                "source_parse_id": ["stale"],
+                "target_team": ["Vitality"],
+                "map_name": ["Mirage"],
+            }
+        ),
+        parse_ids={"stale"},
+        registry_path=Path("configs/maps/map_registry.yaml"),
+    )
     config_path = _write_config(tmp_path, manifest_path)
 
     parse_manifest, outputs, summary = run_parse_pipeline(config_path, force=True, parser_class=FakeParser)
-    ticks = pd.read_parquet(silver_dir / "ticks.parquet")
+    ticks = read_silver_table(silver_dir, "ticks")
     audit = pd.read_parquet(tmp_path / "data/bronze/parse_audit/parse_audit.parquet")
 
     assert parse_manifest.loc[0, "parse_status"] == "parsed"
@@ -456,6 +470,57 @@ def test_force_parse_preserves_other_silver_rows_and_writes_parse_audit(tmp_path
     assert outputs["parse_audit_csv"].exists()
     assert {"ticks", "rounds", "grenades"}.issubset(set(audit["table_name"]))
     assert bool(audit[audit["table_name"] == "ticks"].iloc[0]["has_tick"]) is True
+
+
+def test_force_parse_aborts_before_touching_legacy_ticks(tmp_path: Path) -> None:
+    dem_path = tmp_path / "fake.dem"
+    dem_path.write_bytes(b"fake")
+    manifest_path = tmp_path / "demo_manifest.parquet"
+    pd.DataFrame([_manifest_row(dem_path)]).to_parquet(manifest_path, index=False)
+    config_path = _write_config(tmp_path, manifest_path)
+    silver_dir = tmp_path / "data/silver/parsed_demos"
+    silver_dir.mkdir(parents=True)
+    legacy = pd.DataFrame({"source_parse_id": ["demo1_awpy"], "tick": [7]})
+    legacy.to_parquet(silver_dir / "ticks.parquet", index=False)
+
+    try:
+        run_parse_pipeline(config_path, force=True, parser_class=FakeParser)
+    except RuntimeError as exc:
+        assert "migrate_silver_ticks" in str(exc)
+    else:
+        raise AssertionError("force parse should fail closed while legacy ticks exist")
+
+    assert pd.read_parquet(silver_dir / "ticks.parquet").to_dict("records") == legacy.to_dict("records")
+
+
+def test_failed_force_reparse_preserves_previous_tick_partition(tmp_path: Path) -> None:
+    dem_path = tmp_path / "fail.dem"
+    dem_path.write_bytes(b"fail")
+    manifest_path = tmp_path / "demo_manifest.parquet"
+    pd.DataFrame([_manifest_row(dem_path)]).to_parquet(manifest_path, index=False)
+    config_path = _write_config(tmp_path, manifest_path)
+    silver_dir = tmp_path / "data/silver/parsed_demos"
+    previous = pd.DataFrame(
+        {
+            "source_parse_id": ["demo1_awpy"],
+            "target_team": ["Vitality"],
+            "map_name": ["Mirage"],
+            "tick": [7],
+        }
+    )
+    write_partitioned_silver_table(
+        silver_dir,
+        "ticks",
+        previous,
+        parse_ids={"demo1_awpy"},
+        registry_path=Path("configs/maps/map_registry.yaml"),
+    )
+
+    parse_manifest, _, summary = run_parse_pipeline(config_path, force=True, parser_class=FakeParser)
+
+    assert summary["total_failed"] == 1
+    assert parse_manifest.loc[0, "parse_status"] == "failed"
+    assert read_silver_table(silver_dir, "ticks")["tick"].tolist() == [7]
 
 
 def _parse_manifest_row(parse_id: str, map_name: str, parse_status: str) -> dict[str, object]:
@@ -501,7 +566,20 @@ def test_reset_silver_requires_force_and_clears_other_rows(tmp_path: Path) -> No
     pd.DataFrame([_manifest_row(dem_path)]).to_parquet(manifest_path, index=False)
     silver_dir = tmp_path / "data/silver/parsed_demos"
     silver_dir.mkdir(parents=True)
-    pd.DataFrame({"tick": [0], "source_parse_id": ["stale"]}).to_parquet(silver_dir / "ticks.parquet", index=False)
+    write_partitioned_silver_table(
+        silver_dir,
+        "ticks",
+        pd.DataFrame(
+            {
+                "tick": [0],
+                "source_parse_id": ["stale"],
+                "target_team": ["Vitality"],
+                "map_name": ["Mirage"],
+            }
+        ),
+        parse_ids={"stale"},
+        registry_path=Path("configs/maps/map_registry.yaml"),
+    )
     config_path = _write_config(tmp_path, manifest_path)
 
     try:
@@ -512,7 +590,7 @@ def test_reset_silver_requires_force_and_clears_other_rows(tmp_path: Path) -> No
         raise AssertionError("reset_silver without force should fail")
 
     run_parse_pipeline(config_path, force=True, reset_silver=True, parser_class=FakeParser)
-    ticks = pd.read_parquet(silver_dir / "ticks.parquet")
+    ticks = read_silver_table(silver_dir, "ticks")
 
     assert "stale" not in set(ticks["source_parse_id"])
     assert "demo1_awpy" in set(ticks["source_parse_id"])

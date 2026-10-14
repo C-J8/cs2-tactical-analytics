@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 
+from src.storage.silver_tables import PARTITIONED_TABLES, write_partitioned_silver_table
 from src.utils.io import ensure_dir
 from src.utils.text import clean_string
 
@@ -64,6 +65,8 @@ def write_silver_tables(
     row: dict[str, object],
     parse_id: str,
     output_dir: Path,
+    *,
+    registry_path: Path = Path("configs/maps/map_registry.yaml"),
 ) -> dict[str, pd.DataFrame]:
     ensure_dir(output_dir)
     traced_tables = {
@@ -71,6 +74,16 @@ def write_silver_tables(
         for table_name, df in tables.items()
     }
     for table_name, traced in traced_tables.items():
+        if table_name in PARTITIONED_TABLES:
+            traced = deduplicate_silver_table(traced)
+            write_partitioned_silver_table(
+                output_dir,
+                table_name,
+                traced,
+                parse_ids={str(parse_id)},
+                registry_path=registry_path,
+            )
+            continue
         path = output_dir / f"{table_name}.parquet"
         if path.exists():
             upsert_silver_table(path, traced, parse_ids={str(parse_id)})

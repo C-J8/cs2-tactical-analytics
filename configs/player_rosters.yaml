@@ -1,25 +1,47 @@
 team_registry_version: v1
 default_source: project_manual_roster
 notes: >-
-  Canonical project-local identity registry. Membership dates and immutable external
-  player identifiers remain intentionally blank until a verified source is adopted.
+  Canonical project-local identity registry. The Vitality lineup used by the Mirage
+  2025-2026 analytical scope is anchored to the club's January 10, 2025 official
+  roster announcement. Other teams remain explicitly unverified until promoted into
+  the analytical scope.
 
 teams:
   - team_name: Vitality
     team_id: vitality
-    source: project_manual_roster
+    source: https://vitality.gg/a/l/en/en-na/blogs/actualites/robin-ropz-kool-rejoint-le-roster-cs2-de-team-vitality
     aliases:
       - Team Vitality
     players:
       - player_name: ZywOo
+        player_id: zywoo
+        valid_from: 2025-01-10
+        source: https://vitality.gg/a/l/en/en-na/blogs/actualites/robin-ropz-kool-rejoint-le-roster-cs2-de-team-vitality
+        confidence: verified_primary
         aliases:
           - zywoo
       - player_name: flameZ
+        player_id: flamez
+        valid_from: 2025-01-10
+        source: https://vitality.gg/a/l/en/en-na/blogs/actualites/robin-ropz-kool-rejoint-le-roster-cs2-de-team-vitality
+        confidence: verified_primary
         aliases:
           - flamez
       - player_name: mezii
+        player_id: mezii
+        valid_from: 2025-01-10
+        source: https://vitality.gg/a/l/en/en-na/blogs/actualites/robin-ropz-kool-rejoint-le-roster-cs2-de-team-vitality
+        confidence: verified_primary
       - player_name: ropz
+        player_id: ropz
+        valid_from: 2025-01-10
+        source: https://vitality.gg/a/l/en/en-na/blogs/actualites/robin-ropz-kool-rejoint-le-roster-cs2-de-team-vitality
+        confidence: verified_primary
       - player_name: apEX
+        player_id: apex
+        valid_from: 2025-01-10
+        source: https://vitality.gg/a/l/en/en-na/blogs/actualites/robin-ropz-kool-rejoint-le-roster-cs2-de-team-vitality
+        confidence: verified_primary
         aliases:
           - apex
 

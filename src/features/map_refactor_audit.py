@@ -7,7 +7,7 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
-from src.maps.registry import MapRegistry
+from src.maps.registry import MapRegistry, normalize_id
 from src.maps.semantic import map_feature_unknowns, resolve_feature_requirements
 from src.utils.io import read_catalog
 
@@ -55,6 +55,30 @@ def load_compatibility_baselines(gold_dir: Path) -> dict[str, pd.DataFrame]:
         path = gold_dir / relative_path
         baselines[name] = read_catalog(path) if path.exists() else pd.DataFrame()
     return baselines
+
+
+def scope_compatibility_baselines(
+    baselines: dict[str, pd.DataFrame],
+    *,
+    registry: MapRegistry,
+    target_team: str,
+) -> dict[str, pd.DataFrame]:
+    map_keys = {
+        normalize_id(registry.map_id),
+        normalize_id(registry.display_name),
+        normalize_id(registry.game_map_name),
+    }
+    scoped: dict[str, pd.DataFrame] = {}
+    for name, frame in baselines.items():
+        result = frame.copy()
+        if "map_name" in result.columns:
+            result = result[result["map_name"].map(lambda value: normalize_id(str(value))) .isin(map_keys)]
+        elif "map_id" in result.columns:
+            result = result[result["map_id"].map(lambda value: normalize_id(str(value))).isin(map_keys)]
+        if "target_team" in result.columns:
+            result = result[result["target_team"].astype(str).str.casefold().eq(target_team.casefold())]
+        scoped[name] = result.reset_index(drop=True)
+    return scoped
 
 
 def build_post_refactor_frames(

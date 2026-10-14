@@ -16,6 +16,7 @@ from src.features.side_dataset_audit import build_side_dataset_audit
 from src.maps.identity import resolve_map_identity
 from src.maps.semantic import legacy_feature_groups_for_registry, legacy_groups_for_semantic
 from src.storage.scoped_gold import GOLD_DATASET_SPECS, make_gold_scope, map_id_series, write_scoped_dataset
+from src.storage.silver_tables import silver_scan_source
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 
@@ -64,7 +65,7 @@ def run_side_dataset_pipeline(
     pressure_groups = set()
     for semantic_id in ["mid_control", "a_pressure", "b_pressure", "site_a", "site_b"]:
         pressure_groups.update(legacy_groups_for_semantic(registry, semantic_id))
-    early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), filtered, windows=feature_windows)
+    early_ticks = load_early_ticks(silver_scan_source(silver_dir, "ticks"), filtered, windows=feature_windows)
     place_column = choose_place_column(list(early_ticks.columns), region_config)
     region_presence, _ = build_position_outputs(
         early_ticks,

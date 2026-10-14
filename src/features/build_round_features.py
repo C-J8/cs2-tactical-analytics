@@ -16,6 +16,7 @@ from src.features.map_refactor_audit import (
     load_compatibility_baselines,
     load_feature_contract,
     measure_start,
+    scope_compatibility_baselines,
 )
 from src.features.position_features import build_position_outputs, load_early_ticks
 from src.features.region_mapping import choose_place_column, load_region_mapping_from_registry
@@ -24,6 +25,7 @@ from src.features.utility_features import build_player_round_utility, build_util
 from src.maps.identity import same_map
 from src.maps.semantic import legacy_feature_groups_for_registry
 from src.storage.scoped_gold import GOLD_DATASET_SPECS, make_gold_scope, write_scoped_dataset
+from src.storage.silver_tables import silver_scan_source
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
 
@@ -120,7 +122,11 @@ def run_feature_pipeline(
     registry, region_lookup, region_config = load_region_mapping_from_registry(target_map, registry_path=effective_registry_path)
     feature_contract = load_feature_contract(gold_dir, feature_contract_path)
     candidate_feature_set = load_candidate_feature_set(gold_dir)
-    baselines = load_compatibility_baselines(gold_dir)
+    baselines = scope_compatibility_baselines(
+        load_compatibility_baselines(gold_dir),
+        registry=registry,
+        target_team=target_team,
+    )
     region_feature_groups = legacy_feature_groups_for_registry(registry, ["mid_control", "a_pressure", "b_pressure", "ct_space"])
     utility_region_groups = legacy_feature_groups_for_registry(registry, ["mid_control", "a_pressure", "b_pressure"])
 
@@ -142,7 +148,7 @@ def run_feature_pipeline(
     existing_round_state = read_catalog(round_state_path) if round_state_path.exists() else pd.DataFrame()
     round_base, score_audit = add_score_diff_before_round(round_base, existing_round_state, target_team=target_team)
 
-    early_ticks = load_early_ticks(str(silver_dir / "ticks.parquet"), round_base, windows=feature_windows)
+    early_ticks = load_early_ticks(silver_scan_source(silver_dir, "ticks"), round_base, windows=feature_windows)
     place_column = choose_place_column(list(early_ticks.columns), region_config)
     if place_column is None:
         warnings.append("No place-name column found in ticks; region mapping fell back to UNKNOWN.")

@@ -1,0 +1,55 @@
+storage_version: v1
+
+roots:
+  raw: data/raw
+  bronze: data/bronze
+  silver: data/silver
+  gold: data/gold
+  source_archives: data/raw/demo_archives
+  extracted_demos: data/raw/demos
+  quarantine: data/raw/quarantine
+  migration_rollback: data/raw/quarantine/storage_migrations
+
+partitioning:
+  silver_ticks:
+    layout: table=ticks/target_team=<team_id>/map_id=<map_id>/parse-<source_parse_hash>.parquet
+    logical_partition_key: source_parse_id
+    physical_scope_keys:
+      - target_team
+      - map_id
+    target_file_policy: one_file_per_parse_id
+    compression: zstd
+    atomic_promotion: true
+    parity_checks:
+      - row_count
+      - schema
+      - per_parse_count
+      - commutative_row_content_fingerprint
+
+retention:
+  source_archives:
+    policy: retain
+    reason: Canonical recovery source for extracted DEM files.
+  extracted_demos:
+    policy: cache_after_verified_recovery
+    minimum_days: 30
+    delete_only_when:
+      - source_archive_present
+      - archive_hash_recorded
+      - retention_recovery_passed
+  bronze:
+    policy: retain_rebuild_evidence
+  silver_gold:
+    policy: rebuildable
+  quarantine:
+    policy: manual_review_before_delete
+
+safety:
+  destructive_operations_require_explicit_scope: true
+  never_delete_last_recovery_source: true
+  validate_resolved_paths: true
+  migration_keeps_rollback_copy: true
+
+audit:
+  silver_ticks_migration: data/gold/validation/silver_ticks_migration
+  operational_runs: data/gold/validation/mirage_operational_runs

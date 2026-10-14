@@ -8,6 +8,13 @@ coordinate_system:
   axis_x: x
   axis_y: y
   axis_z: z
+  radar_transform:
+    pos_x: -3230.0
+    pos_y: 1713.0
+    scale: 5.0
+    width: 1024
+    height: 1024
+    source: data/reference/maps/awpy/2000899/map_data.json
   notes: Current pipeline uses Awpy/place-name region aliases rather than custom coordinate
     boxes.
 assets:
@@ -180,7 +187,7 @@ physical_regions:
   status: active
   notes: Migrated from configs/maps/mirage_regions.yaml.
 - region_id: palace
-  display_name: Palace
+  display_name: Palace Interior
   geometry:
     type: named_area
     source: migrated_from_current_pipeline
@@ -188,7 +195,6 @@ physical_regions:
     source_place_aliases:
     - Palace
     - PalaceInterior
-    - PalaceAlley
     notes: Awpy/place-name area migrated without coordinate boundary changes.
   semantic_tags:
   - a_pressure
@@ -199,7 +205,6 @@ physical_regions:
   boundary_policy: existing_behavior
   aliases:
   - Palace
-  - PalaceAlley
   - PalaceInterior
   status: active
   notes: Migrated from configs/maps/mirage_regions.yaml.
@@ -212,7 +217,6 @@ physical_regions:
     source_place_aliases:
     - A Site
     - BombsiteA
-    - Stairs
     notes: Awpy/place-name area migrated without coordinate boundary changes.
   semantic_tags:
   - site_a
@@ -224,7 +228,6 @@ physical_regions:
   aliases:
   - A Site
   - BombsiteA
-  - Stairs
   status: active
   notes: Migrated from configs/maps/mirage_regions.yaml.
 - region_id: b_apps
@@ -236,8 +239,6 @@ physical_regions:
     source_place_aliases:
     - B Apps
     - Apartments
-    - House
-    - BackAlley
     notes: Awpy/place-name area migrated without coordinate boundary changes.
   semantic_tags:
   - b_pressure
@@ -249,8 +250,6 @@ physical_regions:
   aliases:
   - Apartments
   - B Apps
-  - BackAlley
-  - House
   status: active
   notes: Migrated from configs/maps/mirage_regions.yaml.
 - region_id: b_short
@@ -262,7 +261,6 @@ physical_regions:
     source_place_aliases:
     - B Short
     - Ladder
-    - Scaffolding
     notes: Awpy/place-name area migrated without coordinate boundary changes.
   semantic_tags:
   - b_pressure
@@ -274,7 +272,6 @@ physical_regions:
   aliases:
   - B Short
   - Ladder
-  - Scaffolding
   status: active
   notes: Migrated from configs/maps/mirage_regions.yaml.
 - region_id: b_site
@@ -330,7 +327,6 @@ physical_regions:
     - CT Spawn
     - CTSpawn
     - TicketBooth
-    - Truck
     notes: Awpy/place-name area migrated without coordinate boundary changes.
   semantic_tags:
   - ct_space
@@ -342,7 +338,6 @@ physical_regions:
   - CT Spawn
   - CTSpawn
   - TicketBooth
-  - Truck
   status: active
   notes: Migrated from configs/maps/mirage_regions.yaml.
 - region_id: jungle
@@ -353,8 +348,6 @@ physical_regions:
     source_region_group: ROTATION_AREA
     source_place_aliases:
     - Jungle
-    - SideAlley
-    - Underpass
     notes: Awpy/place-name area migrated without coordinate boundary changes.
   semantic_tags:
   - rotation
@@ -364,10 +357,157 @@ physical_regions:
   boundary_policy: existing_behavior
   aliases:
   - Jungle
-  - SideAlley
-  - Underpass
   status: active
   notes: Migrated from configs/maps/mirage_regions.yaml.
+- region_id: palace_alley
+  display_name: Palace Alley
+  geometry:
+    type: named_area
+    source: awpy_parser_place
+    source_place_aliases:
+    - PalaceAlley
+    notes: Split from the former Palace macro-region after radar centroid review.
+  semantic_tags:
+  - a_pressure
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 84
+  boundary_policy: existing_behavior
+  aliases:
+  - PalaceAlley
+  status: active
+  notes: Physical split preserves the prior a_pressure semantic assignment.
+- region_id: stairs
+  display_name: Stairs
+  geometry:
+    type: named_area
+    source: awpy_parser_place
+    source_place_aliases:
+    - Stairs
+    notes: Split from the former A Site macro-region after radar centroid review.
+  semantic_tags:
+  - site_a
+  site_affinity:
+  - A
+  region_scope: map_specific
+  priority: 83
+  boundary_policy: existing_behavior
+  aliases:
+  - Stairs
+  status: active
+  notes: Physical split preserves the prior site_a semantic assignment.
+- region_id: house
+  display_name: House
+  geometry:
+    type: named_area
+    source: awpy_parser_place
+    source_place_aliases:
+    - House
+    notes: Split from the former B Apps macro-region after radar centroid review.
+  semantic_tags:
+  - b_pressure
+  site_affinity:
+  - B
+  region_scope: map_specific
+  priority: 82
+  boundary_policy: existing_behavior
+  aliases:
+  - House
+  status: active
+  notes: Physical split preserves the prior b_pressure semantic assignment.
+- region_id: back_alley
+  display_name: Back Alley
+  geometry:
+    type: named_area
+    source: awpy_parser_place
+    source_place_aliases:
+    - BackAlley
+    notes: Split from the former B Apps macro-region after radar centroid review.
+  semantic_tags:
+  - b_pressure
+  site_affinity:
+  - B
+  region_scope: map_specific
+  priority: 81
+  boundary_policy: existing_behavior
+  aliases:
+  - BackAlley
+  status: active
+  notes: Physical split preserves the prior b_pressure semantic assignment.
+- region_id: scaffolding
+  display_name: Scaffolding
+  geometry:
+    type: named_area
+    source: awpy_parser_place
+    source_place_aliases:
+    - Scaffolding
+    notes: Split from the former B Short macro-region after radar centroid review.
+  semantic_tags:
+  - b_pressure
+  site_affinity:
+  - B
+  region_scope: map_specific
+  priority: 80
+  boundary_policy: existing_behavior
+  aliases:
+  - Scaffolding
+  status: active
+  notes: Physical split preserves the prior b_pressure semantic assignment.
+- region_id: truck
+  display_name: Truck
+  geometry:
+    type: named_area
+    source: awpy_parser_place
+    source_place_aliases:
+    - Truck
+    notes: Split from the former CT Spawn macro-region after radar centroid review.
+  semantic_tags:
+  - ct_space
+  site_affinity: []
+  region_scope: map_specific
+  priority: 79
+  boundary_policy: existing_behavior
+  aliases:
+  - Truck
+  status: active
+  notes: Physical split preserves the prior ct_space semantic assignment.
+- region_id: side_alley
+  display_name: Side Alley
+  geometry:
+    type: named_area
+    source: awpy_parser_place
+    source_place_aliases:
+    - SideAlley
+    notes: Split from the former Jungle macro-region after radar centroid review.
+  semantic_tags:
+  - rotation
+  site_affinity: []
+  region_scope: map_specific
+  priority: 78
+  boundary_policy: existing_behavior
+  aliases:
+  - SideAlley
+  status: active
+  notes: Physical split preserves the prior rotation semantic assignment.
+- region_id: underpass
+  display_name: Underpass
+  geometry:
+    type: named_area
+    source: awpy_parser_place
+    source_place_aliases:
+    - Underpass
+    notes: Split from the former Jungle macro-region after radar centroid review.
+  semantic_tags:
+  - rotation
+  site_affinity: []
+  region_scope: map_specific
+  priority: 77
+  boundary_policy: existing_behavior
+  aliases:
+  - Underpass
+  status: active
+  notes: Physical split preserves the prior rotation semantic assignment.
 semantic_groups:
   a_pressure:
     description: Regions representing meaningful attacking pressure toward bombsite
@@ -375,6 +515,7 @@ semantic_groups:
     member_regions:
     - a_ramp
     - palace
+    - palace_alley
     status: active
     notes: Migrated from current place-name region mapping.
   b_pressure:
@@ -382,7 +523,10 @@ semantic_groups:
       B.
     member_regions:
     - b_apps
+    - house
+    - back_alley
     - b_short
+    - scaffolding
     status: active
     notes: Migrated from current place-name region mapping.
   ct_space:
@@ -390,6 +534,7 @@ semantic_groups:
     member_regions:
     - market
     - ct_spawn
+    - truck
     status: active
     notes: Migrated from current place-name region mapping.
   mid_control:
@@ -407,12 +552,15 @@ semantic_groups:
     description: Connector or rotation areas linking major tactical spaces.
     member_regions:
     - jungle
+    - side_alley
+    - underpass
     status: active
     notes: Migrated from current place-name region mapping.
   site_a:
     description: Physical bombsite A regions.
     member_regions:
     - a_site
+    - stairs
     status: active
     notes: Migrated from current place-name region mapping.
   site_b:
@@ -450,20 +598,25 @@ aliases:
   - TRamp
   palace:
   - Palace
-  - PalaceAlley
   - PalaceInterior
+  palace_alley:
+  - PalaceAlley
   a_site:
   - A Site
   - BombsiteA
+  stairs:
   - Stairs
   b_apps:
   - Apartments
   - B Apps
-  - BackAlley
+  house:
   - House
+  back_alley:
+  - BackAlley
   b_short:
   - B Short
   - Ladder
+  scaffolding:
   - Scaffolding
   b_site:
   - B Site
@@ -475,10 +628,13 @@ aliases:
   - CT Spawn
   - CTSpawn
   - TicketBooth
+  truck:
   - Truck
   jungle:
   - Jungle
+  side_alley:
   - SideAlley
+  underpass:
   - Underpass
 bombsites:
   A:

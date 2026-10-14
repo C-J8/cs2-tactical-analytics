@@ -11,11 +11,40 @@ physical_demo_inventory_reconciliation:
   report: docs/mirage_demo_inventory_reconciliation.md
 
 manual_region_review:
-  status: pending
-  reviewer: null
-  reviewed_at: null
-  reviewed_regions: []
-  notes: Radar/nav spot checks have not yet been signed off.
+  status: passed
+  reviewer: codex_visual_audit
+  reviewed_at: "2026-09-13T05:34:00+00:00"
+  reviewed_regions:
+    - t_spawn
+    - mid
+    - top_mid
+    - connector
+    - window
+    - catwalk
+    - a_ramp
+    - palace
+    - a_site
+    - b_apps
+    - b_short
+    - b_site
+    - market
+    - ct_spawn
+    - jungle
+    - palace_alley
+    - stairs
+    - house
+    - back_alley
+    - scaffolding
+    - truck
+    - side_alley
+    - underpass
+  report: docs/mirage_region_review.md
+  overlay: data/gold/validation/mirage_region_review/mirage_region_review_overlay.png
+  raw_places_reviewed: 23
+  unmatched_places: 0
+  ambiguous_places: 0
+  outside_radar_places: 0
+  notes: AI-assisted visual inspection of all 23 observed centroids against the pinned Mirage radar; the eight formerly conflated physical areas were separated while semantic groups remained stable.
 
 clean_room_rebuild:
   status: pending

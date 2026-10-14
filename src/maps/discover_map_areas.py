@@ -12,6 +12,7 @@ from src.config.schemas import load_project_config
 from src.maps.identity import resolve_map_identity, same_map
 from src.maps.place_columns import PLACE_COLUMN_CANDIDATES, detect_place_column
 from src.maps.registry import MapRegistry, load_map_registry, normalize_id
+from src.storage.silver_tables import SilverScanSource, silver_scan_source
 from src.utils.io import ensure_dir, read_table_pair
 from src.utils.logging import configure_logging
 from src.utils.notebooks import code, md, notebook_json
@@ -58,7 +59,7 @@ def run_area_discovery(
 
     parse_manifest = read_optional(project.parse_manifest_dir / "parse_manifest.parquet")
     parse_ids = parse_ids_for_scope(parse_manifest, target_map=identity.display_name, target_team=target_team, registry_path=registry_path)
-    ticks_path = project.parsed_silver_dir / "ticks.parquet"
+    ticks_path = silver_scan_source(project.parsed_silver_dir, "ticks")
 
     context = build_scope_context(
         ticks_path,
@@ -143,7 +144,7 @@ def run_area_discovery(
 
 
 def build_scope_context(
-    ticks_path: Path,
+    ticks_path: SilverScanSource,
     *,
     parse_ids: set[str],
     identity,
@@ -152,7 +153,7 @@ def build_scope_context(
 ) -> dict[str, Any]:
     del min_observations
     unknowns: list[dict[str, object]] = []
-    if not ticks_path.exists():
+    if not scan_source_exists(ticks_path):
         unknowns.append(unknown(identity, target_team, "no_ticks", None, 0, "high", True, f"Ticks parquet not found: {ticks_path}", "Run parse_demos for the selected map/team scope."))
         return failed_context(ticks_path, unknowns)
     if not parse_ids:
@@ -223,7 +224,7 @@ def build_scope_context(
 
 
 def failed_context(
-    ticks_path: Path,
+    ticks_path: SilverScanSource,
     unknown_rows: list[dict[str, object]],
     *,
     scan: pl.LazyFrame | None = None,
@@ -253,6 +254,12 @@ def failed_context(
         "critical_failures": True,
         "unknown_rows": unknown_rows,
     }
+
+
+def scan_source_exists(source: SilverScanSource) -> bool:
+    if isinstance(source, list):
+        return bool(source) and all(Path(path).exists() for path in source)
+    return Path(source).exists()
 
 
 def prepare_tick_scan(scan: pl.LazyFrame, schema_names: list[str], place_column: str, *, parse_ids: set[str]) -> pl.LazyFrame:
@@ -826,7 +833,7 @@ def build_report(frames: dict[str, pd.DataFrame]) -> str:
             "Stage 8.6 discovers real parser-reported map places and coordinate evidence for already parsed maps.",
             "",
             "## Input Data",
-            "`data/silver/parsed_demos/ticks.parquet` is scanned by scoped `source_parse_id`; the stage avoids loading full tick tables into pandas.",
+            "The partitioned Silver ticks dataset is scanned by scoped `source_parse_id`; the stage avoids loading full tick tables into pandas.",
             "",
             "## Canonical Map Scope",
             "Map scope is resolved through `src.maps.identity`, so aliases such as `Inferno`, `inferno`, and `de_inferno` point to the same canonical map id.",

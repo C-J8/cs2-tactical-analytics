@@ -1,0 +1,421 @@
+{
+  "total_files": 1708,
+  "total_bytes": 45919927715,
+  "by_category": {
+    "root": 10,
+    "ci": 1,
+    "configuration": 16,
+    "orchestration": 5,
+    "data": 1498,
+    "container": 2,
+    "documentation": 28,
+    "notebook": 28,
+    "script": 1,
+    "source": 77,
+    "test": 42
+  },
+  "by_extension": {
+    ".dockerignore": 1,
+    ".example": 1,
+    ".gitattributes": 1,
+    ".yml": 2,
+    ".gitignore": 1,
+    ".yaml": 16,
+    ".py": 125,
+    ".csv": 311,
+    ".parquet": 1107,
+    ".pkl": 1,
+    ".json": 1,
+    ".rar": 19,
+    ".dem": 59,
+    ".airflow": 1,
+    ".pipeline": 1,
+    ".md": 29,
+    ".ipynb": 28,
+    ".toml": 1,
+    ".lock": 2,
+    ".txt": 1
+  },
+  "data_prefixes": {
+    "data/bronze/dem_files_manifest/dem_files_manifest.csv": {
+      "files": 1,
+      "bytes": 53098
+    },
+    "data/bronze/dem_files_manifest/dem_files_manifest.parquet": {
+      "files": 1,
+      "bytes": 33601
+    },
+    "data/bronze/demo_manifest/demo_manifest.csv": {
+      "files": 1,
+      "bytes": 3110
+    },
+    "data/bronze/demo_manifest/demo_manifest.parquet": {
+      "files": 1,
+      "bytes": 17877
+    },
+    "data/bronze/local_archive_manifest/local_archive_manifest.csv": {
+      "files": 1,
+      "bytes": 10548
+    },
+    "data/bronze/local_archive_manifest/local_archive_manifest.parquet": {
+      "files": 1,
+      "bytes": 19860
+    },
+    "data/bronze/match_catalog_raw/match_catalog_raw.csv": {
+      "files": 1,
+      "bytes": 264
+    },
+    "data/bronze/parse_audit/parse_audit.csv": {
+      "files": 1,
+      "bytes": 4737
+    },
+    "data/bronze/parse_audit/parse_audit.parquet": {
+      "files": 1,
+      "bytes": 10042
+    },
+    "data/bronze/parse_manifest/parse_manifest.csv": {
+      "files": 1,
+      "bytes": 45189
+    },
+    "data/bronze/parse_manifest/parse_manifest.parquet": {
+      "files": 1,
+      "bytes": 34261
+    },
+    "data/bronze/parse_quality/parse_quality.csv": {
+      "files": 1,
+      "bytes": 48945
+    },
+    "data/bronze/parse_quality/parse_quality.parquet": {
+      "files": 1,
+      "bytes": 28093
+    },
+    "data/bronze/parsed_demos/Vitality": {
+      "files": 768,
+      "bytes": 513961846
+    },
+    "data/gold/analysis/multi_map_tactical_eda": {
+      "files": 44,
+      "bytes": 2726684
+    },
+    "data/gold/analysis/t_side_manual_review": {
+      "files": 14,
+      "bytes": 426510
+    },
+    "data/gold/analysis/t_side_tactical_eda": {
+      "files": 22,
+      "bytes": 320304
+    },
+    "data/gold/analysis/t_side_tactical_findings": {
+      "files": 20,
+      "bytes": 362013
+    },
+    "data/gold/analysis/tactical_finding_hardening": {
+      "files": 30,
+      "bytes": 4258419
+    },
+    "data/gold/feature_audit/feature_audit.csv": {
+      "files": 1,
+      "bytes": 1190
+    },
+    "data/gold/feature_audit/feature_audit.parquet": {
+      "files": 1,
+      "bytes": 15934
+    },
+    "data/gold/feature_audit/feature_audit_inferno.csv": {
+      "files": 1,
+      "bytes": 1187
+    },
+    "data/gold/feature_audit/feature_audit_inferno.parquet": {
+      "files": 1,
+      "bytes": 15934
+    },
+    "data/gold/feature_audit/map_feature_compatibility.csv": {
+      "files": 1,
+      "bytes": 266512
+    },
+    "data/gold/feature_audit/map_feature_compatibility.parquet": {
+      "files": 1,
+      "bytes": 21086
+    },
+    "data/gold/feature_audit/map_feature_refactor_audit.csv": {
+      "files": 1,
+      "bytes": 686
+    },
+    "data/gold/feature_audit/map_feature_refactor_audit.parquet": {
+      "files": 1,
+      "bytes": 16523
+    },
+    "data/gold/feature_audit/map_feature_registry_usage.csv": {
+      "files": 1,
+      "bytes": 63007
+    },
+    "data/gold/feature_audit/map_feature_registry_usage.parquet": {
+      "files": 1,
+      "bytes": 11562
+    },
+    "data/gold/feature_audit/map_feature_unknowns.csv": {
+      "files": 1,
+      "bytes": 84
+    },
+    "data/gold/feature_audit/map_feature_unknowns.parquet": {
+      "files": 1,
+      "bytes": 3677
+    },
+    "data/gold/feature_audit/score_before_round_audit.csv": {
+      "files": 1,
+      "bytes": 270
+    },
+    "data/gold/feature_audit/score_before_round_audit.parquet": {
+      "files": 1,
+      "bytes": 5905
+    },
+    "data/gold/feature_audit/score_before_round_audit_inferno.csv": {
+      "files": 1,
+      "bytes": 270
+    },
+    "data/gold/feature_audit/score_before_round_audit_inferno.parquet": {
+      "files": 1,
+      "bytes": 5905
+    },
+    "data/gold/feature_audit/side_dataset_audit.csv": {
+      "files": 1,
+      "bytes": 1708
+    },
+    "data/gold/feature_audit/side_dataset_audit.parquet": {
+      "files": 1,
+      "bytes": 13635
+    },
+    "data/gold/features/feature_contract": {
+      "files": 14,
+      "bytes": 534458
+    },
+    "data/gold/maps/area_discovery": {
+      "files": 26,
+      "bytes": 7955517
+    },
+    "data/gold/maps/inferno": {
+      "files": 38,
+      "bytes": 413890
+    },
+    "data/gold/maps/map_registry": {
+      "files": 16,
+      "bytes": 124942
+    },
+    "data/gold/modeling/inferno_ab_exploratory": {
+      "files": 62,
+      "bytes": 447848
+    },
+    "data/gold/modeling/inferno_sample_expansion": {
+      "files": 40,
+      "bytes": 178341
+    },
+    "data/gold/modeling/t_side_ab_baseline": {
+      "files": 16,
+      "bytes": 1064560
+    },
+    "data/gold/modeling/t_side_ab_candidate": {
+      "files": 20,
+      "bytes": 521457
+    },
+    "data/gold/modeling/t_side_ab_error_analysis": {
+      "files": 26,
+      "bytes": 427575
+    },
+    "data/gold/modeling/t_side_ab_refined_experiment": {
+      "files": 20,
+      "bytes": 2140814
+    },
+    "data/gold/region_presence/region_presence_by_round.parquet": {
+      "files": 1,
+      "bytes": 299668
+    },
+    "data/gold/reporting/final_mvp": {
+      "files": 22,
+      "bytes": 95344
+    },
+    "data/gold/round_features/player_round_utility.parquet": {
+      "files": 1,
+      "bytes": 38043
+    },
+    "data/gold/round_features/round_base.parquet": {
+      "files": 1,
+      "bytes": 54459
+    },
+    "data/gold/round_features/round_features_ct_side.csv": {
+      "files": 1,
+      "bytes": 782223
+    },
+    "data/gold/round_features/round_features_ct_side.parquet": {
+      "files": 1,
+      "bytes": 470976
+    },
+    "data/gold/round_features/round_features_mvp.csv": {
+      "files": 1,
+      "bytes": 1438917
+    },
+    "data/gold/round_features/round_features_mvp.parquet": {
+      "files": 1,
+      "bytes": 565758
+    },
+    "data/gold/round_features/round_features_t_side_all.csv": {
+      "files": 1,
+      "bytes": 681692
+    },
+    "data/gold/round_features/round_features_t_side_all.parquet": {
+      "files": 1,
+      "bytes": 455861
+    },
+    "data/gold/round_features/round_features_t_side_planted.csv": {
+      "files": 1,
+      "bytes": 385813
+    },
+    "data/gold/round_features/round_features_t_side_planted.parquet": {
+      "files": 1,
+      "bytes": 411991
+    },
+    "data/gold/round_progression/bomb_carrier_timeline.csv": {
+      "files": 1,
+      "bytes": 6510536
+    },
+    "data/gold/round_progression/bomb_carrier_timeline.parquet": {
+      "files": 1,
+      "bytes": 168718
+    },
+    "data/gold/round_progression/death_context_by_round.csv": {
+      "files": 1,
+      "bytes": 2584964
+    },
+    "data/gold/round_progression/death_context_by_round.parquet": {
+      "files": 1,
+      "bytes": 188847
+    },
+    "data/gold/round_progression/round_outcome_context.csv": {
+      "files": 1,
+      "bytes": 398645
+    },
+    "data/gold/round_progression/round_outcome_context.parquet": {
+      "files": 1,
+      "bytes": 55763
+    },
+    "data/gold/round_progression/round_region_timeline.csv": {
+      "files": 1,
+      "bytes": 30893621
+    },
+    "data/gold/round_progression/round_region_timeline.parquet": {
+      "files": 1,
+      "bytes": 344784
+    },
+    "data/gold/round_state/round_state_audit.csv": {
+      "files": 1,
+      "bytes": 1022
+    },
+    "data/gold/round_state/round_state_audit.parquet": {
+      "files": 1,
+      "bytes": 9155
+    },
+    "data/gold/round_state/round_state_resolved.csv": {
+      "files": 1,
+      "bytes": 406549
+    },
+    "data/gold/round_state/round_state_resolved.parquet": {
+      "files": 1,
+      "bytes": 38838
+    },
+    "data/gold/utility_events/utility_events.parquet": {
+      "files": 1,
+      "bytes": 496280
+    },
+    "data/gold/validation/feature_materialization_repair": {
+      "files": 28,
+      "bytes": 362009
+    },
+    "data/gold/validation/map_feature_quality": {
+      "files": 42,
+      "bytes": 2335698
+    },
+    "data/gold/validation/mirage_regression_baseline": {
+      "files": 18,
+      "bytes": 2706708
+    },
+    "data/gold/validation/mirage_regression_gate": {
+      "files": 24,
+      "bytes": 406545
+    },
+    "data/gold/validation/multi_map_gold": {
+      "files": 22,
+      "bytes": 224921
+    },
+    "data/gold/validation/multi_map_parsing": {
+      "files": 18,
+      "bytes": 105276
+    },
+    "data/raw/demo_archives/Vitality": {
+      "files": 19,
+      "bytes": 15449913170
+    },
+    "data/raw/demos/vitality": {
+      "files": 59,
+      "bytes": 29613933958
+    },
+    "data/raw/manual/matches_seed.csv": {
+      "files": 1,
+      "bytes": 262
+    },
+    "data/silver/matches_catalog/matches_catalog.csv": {
+      "files": 1,
+      "bytes": 419
+    },
+    "data/silver/matches_catalog/matches_catalog.parquet": {
+      "files": 1,
+      "bytes": 10399
+    },
+    "data/silver/parsed_demos/bomb.parquet": {
+      "files": 1,
+      "bytes": 53980
+    },
+    "data/silver/parsed_demos/damages.parquet": {
+      "files": 1,
+      "bytes": 585981
+    },
+    "data/silver/parsed_demos/feature_eligible_demos.csv": {
+      "files": 1,
+      "bytes": 20485
+    },
+    "data/silver/parsed_demos/feature_eligible_demos.parquet": {
+      "files": 1,
+      "bytes": 24773
+    },
+    "data/silver/parsed_demos/footsteps.parquet": {
+      "files": 1,
+      "bytes": 8137259
+    },
+    "data/silver/parsed_demos/grenades.parquet": {
+      "files": 1,
+      "bytes": 45754533
+    },
+    "data/silver/parsed_demos/infernos.parquet": {
+      "files": 1,
+      "bytes": 123881
+    },
+    "data/silver/parsed_demos/kills.parquet": {
+      "files": 1,
+      "bytes": 248355
+    },
+    "data/silver/parsed_demos/rounds.parquet": {
+      "files": 1,
+      "bytes": 17759
+    },
+    "data/silver/parsed_demos/shots.parquet": {
+      "files": 1,
+      "bytes": 1390819
+    },
+    "data/silver/parsed_demos/smokes.parquet": {
+      "files": 1,
+      "bytes": 150849
+    },
+    "data/silver/parsed_demos/ticks.parquet": {
+      "files": 1,
+      "bytes": 205929401
+    }
+  }
+}

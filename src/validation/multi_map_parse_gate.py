@@ -15,6 +15,7 @@ from src.utils.io import ensure_dir, read_catalog, write_dataframe_outputs
 from src.utils.logging import configure_logging
 from src.utils.reports import markdown_table as report_markdown_table
 from src.utils.reports import now_utc
+from src.storage.silver_tables import SilverScanSource, silver_scan_source
 
 
 OUTPUT_NAMES = [
@@ -402,7 +403,7 @@ def filter_scope(
 def load_silver_tables(silver_dir: Path, *, selected_parse_ids: set[str], preservation_parse_ids: set[str]) -> dict[str, pd.DataFrame]:
     return {
         table: read_scoped_silver_table(
-            silver_dir / f"{table}.parquet",
+            silver_scan_source(silver_dir, table),
             selected_parse_ids=selected_parse_ids,
             preservation_parse_ids=preservation_parse_ids,
         )
@@ -410,8 +411,15 @@ def load_silver_tables(silver_dir: Path, *, selected_parse_ids: set[str], preser
     }
 
 
-def read_scoped_silver_table(path: Path, *, selected_parse_ids: set[str], preservation_parse_ids: set[str]) -> pd.DataFrame:
-    if not path.exists():
+def read_scoped_silver_table(
+    path: SilverScanSource,
+    *,
+    selected_parse_ids: set[str],
+    preservation_parse_ids: set[str],
+) -> pd.DataFrame:
+    if isinstance(path, Path) and not path.exists():
+        return pd.DataFrame()
+    if isinstance(path, list) and not path:
         return pd.DataFrame()
     try:
         scan = pl.scan_parquet(path)
@@ -441,7 +449,8 @@ def read_scoped_silver_table(path: Path, *, selected_parse_ids: set[str], preser
         if preservation_ids:
             preservation_scan = scan.filter(pl.col("source_parse_id").cast(pl.Utf8).is_in(preservation_ids))
             preservation_rows = int(preservation_scan.select(pl.len()).collect().item())
-            preservation_hash = hashlib.sha256(f"{path.name}:{preservation_rows}".encode("utf-8")).hexdigest()
+            source_name = path.name if isinstance(path, Path) else "partitioned_dataset"
+            preservation_hash = hashlib.sha256(f"{source_name}:{preservation_rows}".encode("utf-8")).hexdigest()
         frame.attrs["selected_rows"] = selected_rows
         frame.attrs["scoped_duplicate_rows"] = scoped_duplicates
         frame.attrs["preservation_rows"] = preservation_rows

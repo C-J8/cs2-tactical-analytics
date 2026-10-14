@@ -29,6 +29,8 @@ paths:
   storage_contract: configs/storage.yaml
   silver_ticks_monolith: data/silver/parsed_demos/ticks.parquet
   silver_ticks_partition_glob: data/silver/parsed_demos/table=ticks/**/*.parquet
+  silver_ticks_migration_audit: data/gold/validation/silver_ticks_migration/silver_ticks_migration_audit
+  operational_audit: data/gold/validation/mirage_operational_runs/mirage_operational_run_audit
 
 orchestration:
   required_download_module: src.ingestion.download_demos

@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
@@ -24,8 +26,13 @@ from src.utils.reports import markdown_table as report_markdown_table
 from src.utils.reports import now_utc
 
 
-BASELINE_VERSION = "mirage_mvp_map_ready_v1"
+BASELINE_VERSION = "mirage_consolidated_v1"
 DEFAULT_BASELINE_MODE = "current_frozen_mvp"
+RENEWAL_ALLOWED_IDENTITY_DRIFT = {
+    "region_presence_by_round",
+    "round_region_timeline",
+    "utility_events",
+}
 OUTPUT_NAMES = [
     "mirage_regression_summary",
     "mirage_dataset_comparison",
@@ -103,6 +110,8 @@ def run_mirage_regression_gate(
     float_rtol: float = 1e-9,
     strict: bool = True,
     rerun: bool = False,
+    renewal_reason: str | None = None,
+    approved_by: str | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, Path], dict[str, int]]:
     project = load_project_config(config_path)
     project_root = config_path.resolve().parent.parent
@@ -123,10 +132,66 @@ def run_mirage_regression_gate(
         rerun_runtime = perf_counter() - started
 
     current = load_current_datasets(project_root)
+    renewal_outputs: dict[str, Path] = {}
     if baseline_mode == "create":
         validate_stage_8_2_ready(project_root)
         if not dry_run:
-            create_baseline(current, baseline_dir, project_root=project_root, force=force)
+            manifest_path = baseline_dir / "baseline_manifest.parquet"
+            if manifest_path.exists():
+                if not force:
+                    raise FileExistsError(
+                        "Baseline already exists. A governed renewal requires --force, --renewal-reason, and --approved-by."
+                    )
+                if not (renewal_reason or "").strip() or not (approved_by or "").strip():
+                    raise ValueError(
+                        "Renewing an existing baseline requires non-empty --renewal-reason and --approved-by values."
+                    )
+                previous_manifest = load_baseline_manifest(baseline_dir)
+                previous = load_baseline_datasets(previous_manifest)
+                previous_comparison = compare_gate(
+                    previous,
+                    current,
+                    previous_manifest,
+                    target_team=target_team,
+                    target_map=target_map,
+                    project_root=project_root,
+                    float_atol=float_atol,
+                    float_rtol=float_rtol,
+                    strict=strict,
+                    rerun_requested=rerun,
+                    rerun_completed=rerun and not dry_run,
+                    rerun_runtime_seconds=rerun_runtime,
+                )
+                validate_baseline_renewal(previous_comparison)
+                archive_path = archive_baseline(baseline_dir, previous_manifest)
+                previous_version = str(previous_manifest.iloc[0]["baseline_version"])
+                create_baseline(
+                    current,
+                    baseline_dir,
+                    project_root=project_root,
+                    force=True,
+                    supersedes_version=previous_version,
+                    renewal_reason=renewal_reason,
+                    approved_by=approved_by,
+                    archive_path=archive_path,
+                )
+                renewal_audit = build_baseline_renewal_audit(
+                    previous_comparison,
+                    previous_version=previous_version,
+                    archive_path=archive_path,
+                    renewal_reason=renewal_reason,
+                    approved_by=approved_by,
+                )
+                renewal_outputs.update(
+                    write_pair(renewal_audit, baseline_dir / "baseline_renewal_audit", force=True)
+                )
+                renewal_outputs["baseline_renewal_report"] = write_text(
+                    build_baseline_renewal_report(renewal_audit),
+                    project_root / "docs" / "mirage_baseline_renewal.md",
+                    force=True,
+                )
+            else:
+                create_baseline(current, baseline_dir, project_root=project_root, force=force)
     elif baseline_mode != DEFAULT_BASELINE_MODE:
         raise ValueError(f"Unsupported baseline_mode: {baseline_mode}")
 
@@ -146,7 +211,7 @@ def run_mirage_regression_gate(
         rerun_completed=rerun and not dry_run,
         rerun_runtime_seconds=rerun_runtime,
     )
-    outputs: dict[str, Path] = {}
+    outputs: dict[str, Path] = dict(renewal_outputs)
     if not dry_run:
         outputs.update(write_outputs(frames, output_dir, force=force))
         outputs["report"] = write_text(build_report(frames), project_root / "docs" / "mirage_regression_gate.md", force=force)
@@ -169,7 +234,17 @@ def load_current_datasets(project_root: Path) -> dict[str, pd.DataFrame]:
     return frames
 
 
-def create_baseline(current: dict[str, pd.DataFrame], baseline_dir: Path, *, project_root: Path, force: bool) -> pd.DataFrame:
+def create_baseline(
+    current: dict[str, pd.DataFrame],
+    baseline_dir: Path,
+    *,
+    project_root: Path,
+    force: bool,
+    supersedes_version: str | None = None,
+    renewal_reason: str | None = None,
+    approved_by: str | None = None,
+    archive_path: Path | None = None,
+) -> pd.DataFrame:
     manifest_path = baseline_dir / "baseline_manifest.parquet"
     if manifest_path.exists() and not force:
         raise FileExistsError("Baseline already exists. Pass --force with --baseline-mode create to overwrite it explicitly.")
@@ -194,16 +269,24 @@ def create_baseline(current: dict[str, pd.DataFrame], baseline_dir: Path, *, pro
                 "comparison_policy": "strict_logical_content",
                 "created_at": created_at,
                 "source_stage": spec.source_stage,
-                "notes": "First map-ready Mirage MVP baseline.",
+                "supersedes_baseline_version": supersedes_version,
+                "renewal_reason": renewal_reason,
+                "approved_by": approved_by,
+                "previous_baseline_archive": str(archive_path) if archive_path else None,
+                "notes": "Governed Mirage baseline snapshot.",
             }
         )
     for path in CONFIG_SNAPSHOTS:
         absolute = project_root / path
+        snapshot_path = baseline_dir / "config_snapshots" / path
+        if absolute.exists():
+            ensure_dir(snapshot_path.parent)
+            shutil.copy2(absolute, snapshot_path)
         rows.append(
             {
                 "baseline_version": BASELINE_VERSION,
                 "dataset_name": f"config:{path.as_posix()}",
-                "dataset_path": str(absolute),
+                "dataset_path": str(snapshot_path),
                 "row_count": 1 if absolute.exists() else 0,
                 "column_count": 1,
                 "schema_hash": "config_file",
@@ -212,12 +295,125 @@ def create_baseline(current: dict[str, pd.DataFrame], baseline_dir: Path, *, pro
                 "comparison_policy": "content_hash",
                 "created_at": created_at,
                 "source_stage": "config_snapshot",
-                "notes": "Configuration file content fingerprint.",
+                "supersedes_baseline_version": supersedes_version,
+                "renewal_reason": renewal_reason,
+                "approved_by": approved_by,
+                "previous_baseline_archive": str(archive_path) if archive_path else None,
+                "notes": "Configuration file content fingerprint and immutable copy.",
             }
         )
     manifest = pd.DataFrame(rows)
     write_pair(manifest, baseline_dir / "baseline_manifest", force=True)
     return manifest
+
+
+def archive_baseline(baseline_dir: Path, manifest: pd.DataFrame) -> Path:
+    previous_version = normalize_id(str(manifest.iloc[0]["baseline_version"])) or "unknown"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dt%H%M%Sz")
+    archive_root = ensure_dir(baseline_dir.parent / "mirage_regression_baseline_archive")
+    archive_path = archive_root / f"{previous_version}_{timestamp}"
+    if archive_path.exists():
+        raise FileExistsError(f"Baseline archive destination already exists: {archive_path}")
+    shutil.copytree(baseline_dir, archive_path)
+    return archive_path
+
+
+def validate_baseline_renewal(frames: dict[str, pd.DataFrame]) -> None:
+    invariants = frames["mirage_invariant_checks"]
+    failed_invariants = set(invariants.loc[invariants["passed"] != True, "check_id"].astype(str))  # noqa: E712
+    unexpected_invariants = failed_invariants - {"region_timeline_unchanged"}
+
+    row_identity = frames["mirage_row_identity_comparison"]
+    identity_drift = set(row_identity.loc[row_identity["exact_key_match"] != True, "dataset_name"].astype(str))  # noqa: E712
+    unexpected_identity_drift = identity_drift - RENEWAL_ALLOWED_IDENTITY_DRIFT
+
+    candidate = frames["mirage_candidate_input_compatibility"].iloc[0]
+    candidate_compatible = bool(candidate.get("compatible"))
+    region = frames["mirage_region_timeline_comparison"]
+    semantic_changes = int(pd.to_numeric(region["semantic_assignment_changes"], errors="coerce").fillna(0).sum())
+    audit = frames["mirage_regression_audit"].iloc[0]
+    stage_ready = bool(audit.get("stage_8_2_ready"))
+
+    blockers = []
+    if unexpected_invariants:
+        blockers.append(f"unexpected invariant failures={sorted(unexpected_invariants)}")
+    if unexpected_identity_drift:
+        blockers.append(f"unexpected row-identity drift={sorted(unexpected_identity_drift)}")
+    if not candidate_compatible:
+        blockers.append("candidate model inputs or labels changed")
+    if semantic_changes:
+        blockers.append(f"semantic region assignments changed={semantic_changes}")
+    if not stage_ready:
+        blockers.append("Stage 8.2 feature audit is not ready")
+    if blockers:
+        raise ValueError("Baseline renewal policy rejected the current state: " + "; ".join(blockers))
+
+
+def build_baseline_renewal_audit(
+    frames: dict[str, pd.DataFrame],
+    *,
+    previous_version: str,
+    archive_path: Path,
+    renewal_reason: str,
+    approved_by: str,
+) -> pd.DataFrame:
+    dataset = frames["mirage_dataset_comparison"]
+    invariants = frames["mirage_invariant_checks"]
+    failures = frames["mirage_regression_failures"]
+    row_identity = frames["mirage_row_identity_comparison"]
+    region = frames["mirage_region_timeline_comparison"]
+    candidate = frames["mirage_candidate_input_compatibility"].iloc[0]
+    failed_invariants = invariants.loc[invariants["passed"] != True, "check_id"].astype(str).tolist()  # noqa: E712
+    identity_drift = row_identity.loc[row_identity["exact_key_match"] != True, "dataset_name"].astype(str).tolist()  # noqa: E712
+    semantic_changes = int(pd.to_numeric(region["semantic_assignment_changes"], errors="coerce").fillna(0).sum())
+    return pd.DataFrame(
+        [
+            {
+                "renewal_id": f"{previous_version}_to_{BASELINE_VERSION}",
+                "previous_baseline_version": previous_version,
+                "new_baseline_version": BASELINE_VERSION,
+                "previous_baseline_archive": str(archive_path),
+                "renewal_reason": renewal_reason.strip(),
+                "approved_by": approved_by.strip(),
+                "datasets_checked": len(dataset),
+                "datasets_changed": int((dataset["status"] != "ok").sum()),
+                "previous_regression_failures": len(failures),
+                "previous_critical_failures": int((failures["critical"] == True).sum()) if not failures.empty else 0,  # noqa: E712
+                "failed_invariants": "|".join(failed_invariants),
+                "allowed_identity_drift": "|".join(identity_drift),
+                "candidate_inputs_and_labels_stable": bool(candidate.get("compatible")),
+                "semantic_assignment_changes": semantic_changes,
+                "renewal_policy_passed": True,
+                "status": "passed",
+                "created_at": now_utc(),
+            }
+        ]
+    )
+
+
+def build_baseline_renewal_report(audit: pd.DataFrame) -> str:
+    row = audit.iloc[0]
+    return "\n".join(
+        [
+            "# Mirage Baseline Renewal",
+            "",
+            "This report records an explicit, governed replacement of the frozen Mirage regression baseline.",
+            "",
+            f"- Previous baseline: `{row['previous_baseline_version']}`",
+            f"- New baseline: `{row['new_baseline_version']}`",
+            f"- Approved by: `{row['approved_by']}`",
+            f"- Reason: {row['renewal_reason']}",
+            f"- Previous archive: `{row['previous_baseline_archive']}`",
+            f"- Datasets changed: `{row['datasets_changed']}` of `{row['datasets_checked']}`",
+            f"- Previous critical differences: `{row['previous_critical_failures']}`",
+            f"- Failed invariants allowed by policy: `{row['failed_invariants'] or 'none'}`",
+            f"- Candidate inputs and labels stable: `{str(bool(row['candidate_inputs_and_labels_stable'])).lower()}`",
+            f"- Semantic assignment changes: `{row['semantic_assignment_changes']}`",
+            "",
+            "The prior baseline remains recoverable. Renewal is refused when round/label/model-input invariants drift, when semantic assignments change, or when unexpected row identities change.",
+            "",
+        ]
+    )
 
 
 def validate_stage_8_2_ready(project_root: Path) -> None:
@@ -1142,6 +1338,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--float-rtol", type=float, default=1e-9)
     parser.add_argument("--strict", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--rerun", action="store_true")
+    parser.add_argument("--renewal-reason", default=None)
+    parser.add_argument("--approved-by", default=None)
     return parser.parse_args()
 
 
@@ -1159,6 +1357,8 @@ def main() -> None:
         float_rtol=args.float_rtol,
         strict=args.strict,
         rerun=args.rerun,
+        renewal_reason=args.renewal_reason,
+        approved_by=args.approved_by,
     )
     print_summary(outputs, summary)
 

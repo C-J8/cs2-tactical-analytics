@@ -96,11 +96,29 @@ def run_mirage_consolidation_gate(
             check_regression_gate(ctx),
             check_team_provenance(ctx),
             check_downloader_orchestration(ctx),
-            check_declared_evidence(ctx, "clean_room_rebuild", "orchestration", "Clean-room archive-to-Gold rebuild passed."),
-            check_declared_evidence(ctx, "idempotent_rerun", "orchestration", "Identical rerun proved idempotent."),
+            check_operational_evidence(
+                ctx,
+                "clean_room_rebuild",
+                "clean_room_rebuild_passed",
+                "orchestration",
+                "Clean-room archive-to-Gold rebuild passed.",
+            ),
+            check_operational_evidence(
+                ctx,
+                "idempotent_rerun",
+                "idempotent_rerun_passed",
+                "orchestration",
+                "Identical rerun proved idempotent.",
+            ),
             check_storage_contract(ctx),
             check_partitioned_silver(ctx),
-            check_declared_evidence(ctx, "retention_recovery", "storage", "Archive-to-DEM recovery test passed."),
+            check_operational_evidence(
+                ctx,
+                "retention_recovery",
+                "retention_recovery_passed",
+                "storage",
+                "Archive-to-DEM recovery test passed.",
+            ),
         ],
         columns=CHECK_COLUMNS,
     )
@@ -365,16 +383,31 @@ def check_regression_gate(ctx: ConsolidationContext) -> dict[str, Any]:
 
 def check_team_provenance(ctx: ConsolidationContext) -> dict[str, Any]:
     audit = read_optional_table_pair(ctx.project_root, ctx.contract["paths"]["team_dictionary_audit"])
-    row = audit.iloc[-1] if not audit.empty else pd.Series(dtype=object)
+    team_id = normalize_id(ctx.target_team)
+    scoped = (
+        audit[audit.get("team_id", pd.Series(dtype=str)).astype(str).eq(team_id)].copy()
+        if not audit.empty and "team_id" in audit.columns
+        else pd.DataFrame()
+    )
+    row = scoped.iloc[-1] if not scoped.empty else pd.Series(dtype=object)
     unverified = int(numeric(row.get("unverified_memberships")) or 0)
+    memberships = int(numeric(row.get("scoped_membership_count")) or 0)
+    date_bounded = int(numeric(row.get("date_bounded_memberships")) or 0)
+    verified_sources = int(numeric(row.get("verified_source_memberships")) or 0)
     return check_row(
         "team_membership_provenance_verified",
         "governance",
         "Team memberships have verified sources and effective dates.",
-        passed=not audit.empty and unverified == 0,
+        passed=memberships > 0 and unverified == 0 and date_bounded == memberships and verified_sources == memberships,
         blocking=False,
-        observed={"unverified_memberships": unverified, "date_bounded": row.get("date_bounded_memberships")},
-        expected="unverified_memberships=0",
+        observed={
+            "team_id": team_id,
+            "memberships": memberships,
+            "unverified_memberships": unverified,
+            "date_bounded": date_bounded,
+            "verified_sources": verified_sources,
+        },
+        expected="target-team memberships > 0, all date-bounded, source-linked, and verified",
         evidence=ctx.contract["paths"]["team_dictionary_audit"],
         remediation="Verify roster sources and membership dates before broad multi-team analysis.",
     )
@@ -413,14 +446,38 @@ def check_downloader_orchestration(ctx: ConsolidationContext) -> dict[str, Any]:
 def check_storage_contract(ctx: ConsolidationContext) -> dict[str, Any]:
     path = resolve_path(ctx.project_root, Path(ctx.contract["paths"]["storage_contract"]))
     content = load_yaml(path) if path.exists() else {}
-    passed = bool(content.get("storage_version") and content.get("roots") and content.get("retention"))
+    roots = content.get("roots") or {}
+    retention = content.get("retention") or {}
+    partitioning = content.get("partitioning") or {}
+    safety = content.get("safety") or {}
+    required_roots = {"raw", "bronze", "silver", "gold", "source_archives", "extracted_demos", "quarantine"}
+    required_retention = {"source_archives", "extracted_demos", "bronze", "silver_gold", "quarantine"}
+    missing_roots = sorted(required_roots - set(roots))
+    missing_retention = sorted(required_retention - set(retention))
+    ticks = partitioning.get("silver_ticks") or {}
+    passed = bool(
+        content.get("storage_version")
+        and not missing_roots
+        and not missing_retention
+        and ticks.get("logical_partition_key") == "source_parse_id"
+        and ticks.get("atomic_promotion") is True
+        and safety.get("never_delete_last_recovery_source") is True
+    )
     return check_row(
         "storage_and_retention_contract_defined",
         "storage",
         "Storage roots, formats, partitioning, and retention are governed by configuration.",
         passed=passed,
-        observed={"path_exists": path.exists(), "sections": sorted(content)},
-        expected="storage_version, roots, and retention configured",
+        observed={
+            "path_exists": path.exists(),
+            "sections": sorted(content),
+            "missing_roots": missing_roots,
+            "missing_retention": missing_retention,
+            "ticks_partition_key": ticks.get("logical_partition_key"),
+            "atomic_promotion": ticks.get("atomic_promotion"),
+            "protects_last_recovery_source": safety.get("never_delete_last_recovery_source"),
+        },
+        expected="required roots/retention, source_parse_id partitioning, atomic promotion, and recovery protection",
         evidence=str(path),
         remediation="Create the storage contract before moving or deleting any data.",
     )
@@ -430,15 +487,54 @@ def check_partitioned_silver(ctx: ConsolidationContext) -> dict[str, Any]:
     monolith = resolve_path(ctx.project_root, Path(ctx.contract["paths"]["silver_ticks_monolith"]))
     pattern = str(resolve_path(ctx.project_root, Path(ctx.contract["paths"]["silver_ticks_partition_glob"])))
     partitions = [Path(path) for path in glob.glob(pattern, recursive=True)]
-    passed = bool(partitions) and not monolith.exists()
+    audit = read_optional_table_pair(ctx.project_root, ctx.contract["paths"]["silver_ticks_migration_audit"])
+    audit_row = audit.iloc[-1] if not audit.empty else pd.Series(dtype=object)
+    parity_status = str(audit_row.get("status") or "").casefold()
+    rollback_value = audit_row.get("rollback_path")
+    rollback_text = "" if rollback_value is None or pd.isna(rollback_value) else str(rollback_value).strip()
+    rollback_path = resolve_path(ctx.project_root, Path(rollback_text)) if rollback_text else None
+    rollback_exists = bool(rollback_path and rollback_path.exists())
+    source_sha256 = str(audit_row.get("source_sha256") or "").strip()
+    rollback_sha256 = str(audit_row.get("rollback_sha256") or "").strip()
+    rollback_hash_current = sha256_file(rollback_path) if rollback_exists and source_sha256 else None
+    rollback_valid = bool(
+        rollback_exists
+        and as_bool(audit_row.get("rollback_hash_match"))
+        and source_sha256
+        and source_sha256 == rollback_sha256 == rollback_hash_current
+    )
+    rows_match = (
+        numeric(audit_row.get("source_rows")) is not None
+        and numeric(audit_row.get("source_rows")) == numeric(audit_row.get("partition_rows"))
+    )
+    parity_passed = (
+        parity_status == "passed"
+        and rows_match
+        and as_bool(audit_row.get("schema_match"))
+        and as_bool(audit_row.get("per_parse_count_match"))
+        and as_bool(audit_row.get("content_fingerprint_match"))
+        and rollback_valid
+    )
+    passed = bool(partitions) and not monolith.exists() and parity_passed
     return check_row(
         "silver_ticks_partitioned",
         "storage",
         "High-volume Silver ticks are a partitioned Parquet dataset, not one rewritten monolith.",
         passed=passed,
-        observed={"monolith_exists": monolith.exists(), "partition_files": len(partitions)},
-        expected="monolith absent and partition_files > 0",
-        evidence=pattern,
+        observed={
+            "monolith_exists": monolith.exists(),
+            "partition_files": len(partitions),
+            "migration_status": parity_status or None,
+            "source_rows": audit_row.get("source_rows"),
+            "partition_rows": audit_row.get("partition_rows"),
+            "schema_match": audit_row.get("schema_match"),
+            "per_parse_count_match": audit_row.get("per_parse_count_match"),
+            "content_fingerprint_match": audit_row.get("content_fingerprint_match"),
+            "rollback_exists": rollback_exists,
+            "rollback_hash_match": rollback_valid,
+        },
+        expected="monolith absent, partition_files > 0, recorded row/schema/content parity, and verified rollback hash",
+        evidence=f"{pattern}; {ctx.contract['paths']['silver_ticks_migration_audit']}",
         remediation="Migrate Silver ticks to partitioned Parquet and validate row/hash parity.",
     )
 
@@ -469,6 +565,53 @@ def check_declared_evidence(
         expected="status=passed with run/reviewer evidence",
         evidence="configs/quality/mirage_consolidation_evidence.yaml",
         remediation=str(item.get("notes") or "Produce and record the required evidence."),
+    )
+
+
+def check_operational_evidence(
+    ctx: ConsolidationContext,
+    evidence_id: str,
+    audit_field: str,
+    category: str,
+    description: str,
+) -> dict[str, Any]:
+    item = ctx.evidence.get(evidence_id) or {}
+    declared_status = str(item.get("status") or "pending").casefold()
+    run_id = str(item.get("run_id") or "").strip()
+    completed_at = str(item.get("completed_at") or "").strip()
+    audit_path = str(ctx.contract.get("paths", {}).get("operational_audit") or "")
+    audit = read_optional_table_pair(ctx.project_root, audit_path) if audit_path else pd.DataFrame()
+    scoped = (
+        audit[audit.get("run_id", pd.Series(dtype=str)).astype(str).eq(run_id)].copy()
+        if run_id and not audit.empty
+        else pd.DataFrame()
+    )
+    row = scoped.iloc[-1] if not scoped.empty else pd.Series(dtype=object)
+    artifact_passed = bool(
+        str(row.get("status") or "").casefold() == "passed"
+        and as_bool(row.get(audit_field))
+        and str(row.get("completed_at") or "").strip()
+    )
+    missing_fields = [field for field, value in (("run_id", run_id), ("completed_at", completed_at)) if not value]
+    return check_row(
+        evidence_id,
+        category,
+        description,
+        passed=declared_status == "passed" and not missing_fields and artifact_passed,
+        pending=declared_status == "pending",
+        evaluation="verified_run_artifact",
+        observed={
+            "declared_status": declared_status,
+            "run_id": run_id or None,
+            "completed_at": completed_at or None,
+            "missing_required_evidence": missing_fields,
+            "audit_row_found": not scoped.empty,
+            "audit_status": row.get("status"),
+            audit_field: row.get(audit_field),
+        },
+        expected=f"declared status=passed and matching audit row has status=passed and {audit_field}=true",
+        evidence=f"configs/quality/mirage_consolidation_evidence.yaml; {audit_path or 'missing operational_audit path'}",
+        remediation=str(item.get("notes") or "Run src.validation.mirage_operational_validation and record its run_id."),
     )
 
 

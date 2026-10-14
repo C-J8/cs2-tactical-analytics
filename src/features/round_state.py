@@ -9,6 +9,7 @@ import polars as pl
 from src.config.schemas import load_project_config
 from src.maps.identity import resolve_map_identity
 from src.storage.scoped_gold import GOLD_DATASET_SPECS, make_gold_scope, map_id_series, write_scoped_dataset
+from src.storage.silver_tables import SilverScanSource, silver_scan_source
 from src.teams.registry import load_team_registry
 from src.utils.io import ensure_dir, read_catalog
 from src.utils.logging import configure_logging
@@ -84,7 +85,7 @@ def run_round_state_pipeline(
     round_base = round_base[round_base["round_feature_id"].astype(str).isin(set(round_features["round_feature_id"].astype(str)))].copy() if "round_feature_id" in round_base.columns else round_base.iloc[0:0].copy()
     rounds = pd.read_parquet(silver_dir / "rounds.parquet")
     bomb = pd.read_parquet(silver_dir / "bomb.parquet") if (silver_dir / "bomb.parquet").exists() else pd.DataFrame()
-    ticks_path = silver_dir / "ticks.parquet"
+    ticks_path = silver_scan_source(silver_dir, "ticks")
     roster_path = (
         project.team_registry_path
         if project.team_registry_path.is_absolute()
@@ -264,8 +265,16 @@ def resolve_sides_from_explicit_columns(base: pd.DataFrame, *, target_team: str)
     return evidence
 
 
-def resolve_sides_from_ticks(base: pd.DataFrame, *, ticks_path: Path, target_team: str, team_rosters: TeamRosters) -> dict[tuple[str, int], dict[str, object]]:
-    if not ticks_path.exists():
+def resolve_sides_from_ticks(
+    base: pd.DataFrame,
+    *,
+    ticks_path: SilverScanSource,
+    target_team: str,
+    team_rosters: TeamRosters,
+) -> dict[tuple[str, int], dict[str, object]]:
+    if isinstance(ticks_path, Path) and not ticks_path.exists():
+        return {}
+    if isinstance(ticks_path, list) and not ticks_path:
         return {}
     players = roster_players(team_rosters, target_team)
     if not players:

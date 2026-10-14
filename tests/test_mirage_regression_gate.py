@@ -126,6 +126,34 @@ def test_baseline_create_manifest_and_no_automatic_overwrite(tmp_path: Path) -> 
         run_mirage_regression_gate(config, baseline_mode="create", force=False)
 
 
+def test_baseline_renewal_requires_governance_and_archives_previous(tmp_path: Path) -> None:
+    config = _write_fixture(tmp_path)
+    _create_baseline(config)
+
+    with pytest.raises(ValueError, match="renewal-reason"):
+        run_mirage_regression_gate(config, baseline_mode="create", force=True)
+
+    _, outputs, summary = run_mirage_regression_gate(
+        config,
+        baseline_mode="create",
+        force=True,
+        renewal_reason="Validated fixture refresh with stable labels and candidate inputs.",
+        approved_by="test_owner",
+    )
+
+    baseline_dir = tmp_path / "data/gold/validation/mirage_regression_baseline"
+    manifest = pd.read_parquet(baseline_dir / "baseline_manifest.parquet")
+    renewal = pd.read_parquet(baseline_dir / "baseline_renewal_audit.parquet").iloc[0]
+    archives = list((baseline_dir.parent / "mirage_regression_baseline_archive").iterdir())
+    assert summary["ready_for_new_map_onboarding"] == 1
+    assert len(archives) == 1
+    assert (archives[0] / "baseline_manifest.parquet").exists()
+    assert renewal["status"] == "passed"
+    assert renewal["approved_by"] == "test_owner"
+    assert manifest["approved_by"].eq("test_owner").all()
+    assert outputs["baseline_renewal_report"].exists()
+
+
 def test_same_dataset_passes_and_ready_true(tmp_path: Path) -> None:
     config = _write_fixture(tmp_path)
     _create_baseline(config)

@@ -16,6 +16,7 @@ from src.features.feature_windows import FeatureWindow, configured_feature_windo
 from src.features.region_mapping import add_region_columns
 from src.features.utility_features import canonical_utility_type, count_inventory
 from src.maps.registry import MapRegistry, load_map_registry
+from src.storage.silver_tables import silver_scan_source
 from src.maps.semantic import legacy_groups_for_semantic, place_lookup_from_registry
 from src.utils.io import read_table_pair, write_dataframe_outputs
 from src.utils.logging import configure_logging
@@ -79,7 +80,7 @@ def run_role_feature_pipeline(
         target_map=registry.display_name,
         target_team=target_team,
     )
-    role_ticks = load_role_ticks(silver_dir / "ticks.parquet", metadata, registry)
+    role_ticks = load_role_ticks(silver_scan_source(silver_dir, "ticks"), metadata, registry)
     windows = unique_windows(configured_feature_windows(project.feature_windows))
     role_features = build_role_feature_frame(metadata, role_ticks, registry, windows)
     utility_events = load_role_utility_events(silver_dir, metadata, role_ticks)
@@ -159,7 +160,7 @@ def build_round_metadata(
     return scoped.sort_values(["parse_id", "round_num"], kind="stable").reset_index(drop=True)
 
 
-def load_role_ticks(ticks_path: Path, metadata: pd.DataFrame, registry: MapRegistry) -> pd.DataFrame:
+def load_role_ticks(ticks_path: str | Path | list[str], metadata: pd.DataFrame, registry: MapRegistry) -> pd.DataFrame:
     if metadata.empty:
         return pd.DataFrame()
     join_columns = [

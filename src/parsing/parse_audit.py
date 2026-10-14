@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 
+from src.storage.silver_tables import silver_scan_source
 from src.utils.io import ensure_dir
 
 
@@ -30,19 +32,21 @@ PARSE_AUDIT_COLUMNS = [
 def build_parse_audit(silver_dir: Path) -> pd.DataFrame:
     rows = []
     created_at = datetime.now(timezone.utc).isoformat()
-    for path in sorted(silver_dir.glob("*.parquet"), key=lambda item: item.name.lower()):
-        table_name = path.stem
+    table_names = {path.stem for path in silver_dir.glob("*.parquet")}
+    table_names.update(path.name.removeprefix("table=") for path in silver_dir.glob("table=*") if path.is_dir())
+    for table_name in sorted(table_names):
         try:
-            df = pd.read_parquet(path)
+            scan = pl.scan_parquet(silver_scan_source(silver_dir, table_name))
+            columns = scan.collect_schema().names()
+            row_count = int(scan.select(pl.len()).collect(engine="streaming").item())
         except Exception as exc:
             rows.append(error_row(table_name, str(exc), created_at))
             continue
-        columns = list(df.columns)
         rows.append(
             {
                 "parse_id": "silver_consolidated",
                 "table_name": table_name,
-                "row_count": len(df),
+                "row_count": row_count,
                 "column_count": len(columns),
                 "columns": ",".join(columns),
                 "has_series_id": "series_id" in columns,
